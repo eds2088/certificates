@@ -53,7 +53,10 @@ export default function Signup() {
     const { data, error } = await supabase.auth.signUp({
       email,
       password: senha,
-      options: { data: { nome, tipo: "responsavel" } },
+      options: {
+        data: { nome, tipo: "responsavel" },
+        emailRedirectTo: `${window.location.origin}/onboarding`,
+      },
     });
 
     if (error) {
@@ -62,17 +65,18 @@ export default function Signup() {
       return;
     }
 
-    // Create profile row (Lovable: also handle this via trigger if preferred)
-    if (data.user) {
-      await supabase.from("profiles").insert({
-        id: data.user.id,
-        email,
-        nome,
-        tipo: "responsavel",
-      });
+    setLoading(false);
+
+    // If email confirmation is required, no session is returned. Send the
+    // user to login with a message instead of to onboarding (which would
+    // bounce them back here for being unauthenticated).
+    if (!data.session) {
+      setError(
+        "Conta criada! Verifique seu e-mail para confirmar e depois faça login."
+      );
+      return;
     }
 
-    setLoading(false);
     nav({ to: "/onboarding" });
   }
 

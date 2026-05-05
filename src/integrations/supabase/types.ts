@@ -14,7 +14,233 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      assinaturas: {
+        Row: {
+          atualizado_em: string | null
+          criado_em: string | null
+          id: string
+          mp_subscription_id: string | null
+          plano: string
+          proximo_pagamento: string | null
+          responsavel_id: string
+          status: string
+        }
+        Insert: {
+          atualizado_em?: string | null
+          criado_em?: string | null
+          id?: string
+          mp_subscription_id?: string | null
+          plano: string
+          proximo_pagamento?: string | null
+          responsavel_id: string
+          status?: string
+        }
+        Update: {
+          atualizado_em?: string | null
+          criado_em?: string | null
+          id?: string
+          mp_subscription_id?: string | null
+          plano?: string
+          proximo_pagamento?: string | null
+          responsavel_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assinaturas_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      familia_vinculos: {
+        Row: {
+          codigo: string
+          criado_em: string | null
+          expira_em: string | null
+          filho_id: string
+          id: string
+          responsavel_id: string | null
+          usado: boolean | null
+        }
+        Insert: {
+          codigo: string
+          criado_em?: string | null
+          expira_em?: string | null
+          filho_id: string
+          id?: string
+          responsavel_id?: string | null
+          usado?: boolean | null
+        }
+        Update: {
+          codigo?: string
+          criado_em?: string | null
+          expira_em?: string | null
+          filho_id?: string
+          id?: string
+          responsavel_id?: string | null
+          usado?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "familia_vinculos_filho_id_fkey"
+            columns: ["filho_id"]
+            isOneToOne: false
+            referencedRelation: "filhos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "familia_vinculos_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      filhos: {
+        Row: {
+          ano_escolar: Database["public"]["Enums"]["ano_escolar"]
+          criado_em: string | null
+          data_nascimento: string | null
+          escola: string | null
+          id: string
+          nome: string
+          responsavel_id: string
+        }
+        Insert: {
+          ano_escolar: Database["public"]["Enums"]["ano_escolar"]
+          criado_em?: string | null
+          data_nascimento?: string | null
+          escola?: string | null
+          id?: string
+          nome: string
+          responsavel_id: string
+        }
+        Update: {
+          ano_escolar?: Database["public"]["Enums"]["ano_escolar"]
+          criado_em?: string | null
+          data_nascimento?: string | null
+          escola?: string | null
+          id?: string
+          nome?: string
+          responsavel_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "filhos_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      materiais: {
+        Row: {
+          criado_em: string | null
+          id: string
+          ordem: number | null
+          plano_id: string
+          storage_path: string
+        }
+        Insert: {
+          criado_em?: string | null
+          id?: string
+          ordem?: number | null
+          plano_id: string
+          storage_path: string
+        }
+        Update: {
+          criado_em?: string | null
+          id?: string
+          ordem?: number | null
+          plano_id?: string
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "materiais_plano_id_fkey"
+            columns: ["plano_id"]
+            isOneToOne: false
+            referencedRelation: "planos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      planos: {
+        Row: {
+          atualizado_em: string | null
+          conteudo_json: Json | null
+          criado_em: string | null
+          data_prova: string
+          disciplina: string
+          filho_id: string
+          id: string
+          observacoes: string | null
+          status: Database["public"]["Enums"]["status_plano"]
+        }
+        Insert: {
+          atualizado_em?: string | null
+          conteudo_json?: Json | null
+          criado_em?: string | null
+          data_prova: string
+          disciplina: string
+          filho_id: string
+          id?: string
+          observacoes?: string | null
+          status?: Database["public"]["Enums"]["status_plano"]
+        }
+        Update: {
+          atualizado_em?: string | null
+          conteudo_json?: Json | null
+          criado_em?: string | null
+          data_prova?: string
+          disciplina?: string
+          filho_id?: string
+          id?: string
+          observacoes?: string | null
+          status?: Database["public"]["Enums"]["status_plano"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "planos_filho_id_fkey"
+            columns: ["filho_id"]
+            isOneToOne: false
+            referencedRelation: "filhos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          criado_em: string | null
+          email: string
+          id: string
+          nome: string
+          termos_lgpd_at: string | null
+          tipo: Database["public"]["Enums"]["tipo_usuario"]
+        }
+        Insert: {
+          criado_em?: string | null
+          email: string
+          id: string
+          nome: string
+          termos_lgpd_at?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_usuario"]
+        }
+        Update: {
+          criado_em?: string | null
+          email?: string
+          id?: string
+          nome?: string
+          termos_lgpd_at?: string | null
+          tipo?: Database["public"]["Enums"]["tipo_usuario"]
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +249,16 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      ano_escolar:
+        | "1_EF"
+        | "2_EF"
+        | "3_EF"
+        | "4_EF"
+        | "5_EF"
+        | "6_EF"
+        | "olimpiadas"
+      status_plano: "gerando" | "ativo" | "concluido" | "erro"
+      tipo_usuario: "responsavel" | "aluno"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +385,18 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ano_escolar: [
+        "1_EF",
+        "2_EF",
+        "3_EF",
+        "4_EF",
+        "5_EF",
+        "6_EF",
+        "olimpiadas",
+      ],
+      status_plano: ["gerando", "ativo", "concluido", "erro"],
+      tipo_usuario: ["responsavel", "aluno"],
+    },
   },
 } as const

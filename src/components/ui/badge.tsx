@@ -10,7 +10,7 @@ const badgeVariants = cva(
         default: "border-transparent bg-primary text-primary-foreground",
         accent: "border-transparent bg-accent text-accent-foreground",
         secondary: "border-transparent bg-secondary text-secondary-foreground",
-        success: "border-transparent bg-[hsl(var(--success))] text-white",
+        success: "border-transparent bg-success text-white",
         outline: "text-foreground",
       },
     },

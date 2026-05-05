@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, getRouteApi } from "@tanstack/react-router";
-const Route = getRouteApi("/plano/$id");
+const Route = getRouteApi("/_app/plano/$id");
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   ArrowLeft, Loader2, BookOpen, Brain, FileText, Calendar,

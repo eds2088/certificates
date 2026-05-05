@@ -221,7 +221,7 @@ export default function Onboarding() {
           {step === 2 && (
             <div className="text-center">
               <div className="mx-auto mb-4 animate-float">
-                <MascotJu size={140} pose="happy" />
+                <MascotJu size={140} pose="celebrate" />
               </div>
               <h1 className="font-display text-2xl font-bold">Tudo pronto!</h1>
               <p className="mx-auto mt-3 max-w-md text-muted-foreground">

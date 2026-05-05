@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Loader2, Plus, X } from "lucide-react";
 import { Logo } from "@/components/Logo";
@@ -21,13 +21,20 @@ const FILHO_VAZIO: FilhoForm = { nome: "", ano_escolar: "", escola: "" };
 
 export default function Onboarding() {
   const nav = useNavigate();
-  const { user, refreshProfile } = useAuth();
+  const { user, loading: authLoading, refreshProfile } = useAuth();
   const [step, setStep] = useState(0);
   const [filhos, setFilhos] = useState<FilhoForm[]>([{ ...FILHO_VAZIO }]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const totalSteps = 2;
+
+  // Once auth finishes hydrating, send unauthenticated users to login
+  useEffect(() => {
+    if (!authLoading && !user) {
+      nav({ to: "/login" });
+    }
+  }, [authLoading, user, nav]);
 
   function updateFilho(idx: number, patch: Partial<FilhoForm>) {
     setFilhos((fs) => fs.map((f, i) => (i === idx ? { ...f, ...patch } : f)));
@@ -54,14 +61,17 @@ export default function Onboarding() {
     setError(null);
     setLoading(true);
 
-    if (!user) {
-      setError("Sessão expirada. Faça login novamente para continuar.");
+    // Confirm a live session before writing (handles token refresh races)
+    const { data: sessionData } = await supabase.auth.getSession();
+    const activeUser = sessionData.session?.user ?? user;
+    if (!activeUser) {
       setLoading(false);
+      nav({ to: "/login" });
       return;
     }
 
     const rows = filhos.map((f) => ({
-      responsavel_id: user.id,
+      responsavel_id: activeUser.id,
       nome: f.nome.trim(),
       ano_escolar: f.ano_escolar as AnoEscolar,
       escola: f.escola.trim() || null,
@@ -77,6 +87,14 @@ export default function Onboarding() {
     await refreshProfile();
     setLoading(false);
     nav({ to: "/dashboard" });
+  }
+
+  if (authLoading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-estudito-sky">
+        <Loader2 className="animate-spin text-primary" size={28} />
+      </div>
+    );
   }
 
   return (

@@ -26,16 +26,16 @@ export function MascotJu({ className, size = 120, pose = "happy" }: MascotJuProp
       aria-label="Ju, a raposinha mascote do Estudito"
     >
       {/* Soft glow background */}
-      <circle cx="100" cy="105" r="78" fill="hsl(var(--ju-soft))" opacity="0.6" />
+      <circle cx="100" cy="105" r="78" fill="var(--ju-soft)" opacity="0.6" />
 
       {/* Ears */}
-      <path d="M55 75 Q60 32 88 55 Z" fill="hsl(var(--ju))" />
-      <path d="M145 75 Q140 32 112 55 Z" fill="hsl(var(--ju))" />
-      <path d="M62 70 Q66 45 82 60 Z" fill="hsl(var(--ju-soft))" />
-      <path d="M138 70 Q134 45 118 60 Z" fill="hsl(var(--ju-soft))" />
+      <path d="M55 75 Q60 32 88 55 Z" fill="var(--ju)" />
+      <path d="M145 75 Q140 32 112 55 Z" fill="var(--ju)" />
+      <path d="M62 70 Q66 45 82 60 Z" fill="var(--ju-soft)" />
+      <path d="M138 70 Q134 45 118 60 Z" fill="var(--ju-soft)" />
 
       {/* Head */}
-      <ellipse cx="100" cy="110" rx="58" ry="52" fill="hsl(var(--ju))" />
+      <ellipse cx="100" cy="110" rx="58" ry="52" fill="var(--ju)" />
 
       {/* Cheek/chin lighter area */}
       <ellipse cx="100" cy="125" rx="38" ry="32" fill="#FFF8EC" />
@@ -67,13 +67,13 @@ export function MascotJu({ className, size = 120, pose = "happy" }: MascotJuProp
       {/* Wave hand for "wave" pose */}
       {pose === "wave" && (
         <g>
-          <ellipse cx="158" cy="98" rx="9" ry="11" fill="hsl(var(--ju))" transform="rotate(-15 158 98)" />
+          <ellipse cx="158" cy="98" rx="9" ry="11" fill="var(--ju)" transform="rotate(-15 158 98)" />
           <ellipse cx="158" cy="100" rx="5" ry="7" fill="#FFF8EC" transform="rotate(-15 158 98)" />
         </g>
       )}
 
       {/* Tail tip white tuft (peeking) */}
-      <path d="M40 138 Q22 152 36 168 Q48 158 50 142 Z" fill="hsl(var(--ju))" />
+      <path d="M40 138 Q22 152 36 168 Q48 158 50 142 Z" fill="var(--ju)" />
       <path d="M30 156 Q22 160 28 168 Q34 164 34 158 Z" fill="#FFF8EC" />
     </svg>
   );

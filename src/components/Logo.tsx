@@ -24,11 +24,11 @@ export function Logo({ className, withIcon = true, size = "md" }: LogoProps) {
           aria-hidden="true"
           className="shrink-0"
         >
-          <rect width="64" height="64" rx="16" fill="hsl(var(--primary))" />
+          <rect width="64" height="64" rx="16" fill="var(--primary)" />
           {/* Mini fox face */}
-          <path d="M16 22 L20 12 L28 18 Z" fill="hsl(var(--ju))" />
-          <path d="M48 22 L44 12 L36 18 Z" fill="hsl(var(--ju))" />
-          <ellipse cx="32" cy="36" rx="18" ry="16" fill="hsl(var(--ju))" />
+          <path d="M16 22 L20 12 L28 18 Z" fill="var(--ju)" />
+          <path d="M48 22 L44 12 L36 18 Z" fill="var(--ju)" />
+          <ellipse cx="32" cy="36" rx="18" ry="16" fill="var(--ju)" />
           <ellipse cx="32" cy="42" rx="11" ry="9" fill="#FFF8EC" />
           <circle cx="26" cy="34" r="2.4" fill="#1E1E1E" />
           <circle cx="38" cy="34" r="2.4" fill="#1E1E1E" />

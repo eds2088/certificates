@@ -63,7 +63,7 @@ export default function Onboarding() {
     const rows = filhos.map((f) => ({
       responsavel_id: user.id,
       nome: f.nome.trim(),
-      ano_escolar: f.ano_escolar,
+      ano_escolar: f.ano_escolar as AnoEscolar,
       escola: f.escola.trim() || null,
     }));
 

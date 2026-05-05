@@ -29,12 +29,6 @@ export default function Signup() {
 
     setLoading(true);
 
-    if (false) {
-      setError("Conexão com Supabase ainda não configurada. Adicione as variáveis de ambiente.");
-      setLoading(false);
-      return;
-    }
-
     const { data, error } = await supabase.auth.signUp({
       email,
       password: senha,

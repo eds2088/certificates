@@ -20,12 +20,6 @@ export default function Login() {
     setError(null);
     setLoading(true);
 
-    if (false) {
-      setError("Conexão com Supabase ainda não configurada. Adicione as variáveis de ambiente.");
-      setLoading(false);
-      return;
-    }
-
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
     setLoading(false);
 

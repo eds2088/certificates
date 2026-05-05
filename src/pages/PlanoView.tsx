@@ -122,7 +122,7 @@ export default function PlanoView() {
     );
     const newConteudo = { ...conteudo, sessoes: updatedSessoes };
     setPlano({ ...plano, conteudo_json: newConteudo });
-    await supabase.from("planos").update({ conteudo_json: newConteudo }).eq("id", plano.id);
+    await supabase.from("planos").update({ conteudo_json: newConteudo as any }).eq("id", plano.id);
   }
 
   return (

@@ -55,7 +55,7 @@ export default function Onboarding() {
     setLoading(true);
 
     if (!user) {
-      setError("Configure o Supabase para finalizar o cadastro.");
+      setError("Sessão expirada. Faça login novamente para continuar.");
       setLoading(false);
       return;
     }
@@ -63,7 +63,7 @@ export default function Onboarding() {
     const rows = filhos.map((f) => ({
       responsavel_id: user.id,
       nome: f.nome.trim(),
-      ano_escolar: f.ano_escolar,
+      ano_escolar: f.ano_escolar as AnoEscolar,
       escola: f.escola.trim() || null,
     }));
 

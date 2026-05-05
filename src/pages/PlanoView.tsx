@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "@tanstack/react-router";
+import { Link, getRouteApi } from "@tanstack/react-router";
+const Route = getRouteApi("/plano/$id");
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   ArrowLeft, Loader2, BookOpen, Brain, FileText, Calendar,
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils";
 import type { Plano } from "@/types";
 
 export default function PlanoView() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = Route.useParams();
   const [plano, setPlano] = useState<Plano | null>(null);
   const [loading, setLoading] = useState(true);
   const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set());

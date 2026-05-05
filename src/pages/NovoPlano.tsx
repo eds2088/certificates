@@ -116,7 +116,7 @@ export default function NovoPlano() {
         throw e3;
       }
 
-      nav(`/plano/${plano.id}`);
+      nav({ to: "/plano/$id", params: { id: plano.id } });
     } catch (err) {
       setError("Não conseguimos gerar seu plano agora. Verifique se as fotos estão legíveis e tente de novo.");
       setLoading(false);

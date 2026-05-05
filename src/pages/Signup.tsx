@@ -58,7 +58,7 @@ export default function Signup() {
     }
 
     setLoading(false);
-    nav("/onboarding");
+    nav({ to: "/onboarding" });
   }
 
   return (

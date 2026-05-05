@@ -33,7 +33,7 @@ export default function Login() {
       setError("E-mail ou senha incorretos.");
       return;
     }
-    nav("/dashboard");
+    nav({ to: "/dashboard" });
   }
 
   return (

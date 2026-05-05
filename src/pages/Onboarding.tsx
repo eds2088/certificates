@@ -76,7 +76,7 @@ export default function Onboarding() {
 
     await refreshProfile();
     setLoading(false);
-    nav("/dashboard");
+    nav({ to: "/dashboard" });
   }
 
   return (

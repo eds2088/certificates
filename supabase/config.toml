@@ -1,1 +1,4 @@
 project_id = "lflorvzosiplgpdwjgsf"
+
+[functions.gerar-plano]
+verify_jwt = false

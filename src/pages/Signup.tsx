@@ -29,7 +29,7 @@ export default function Signup() {
 
     setLoading(true);
 
-    if (!|| !supabase) {
+    if (false) {
       setError("Conexão com Supabase ainda não configurada. Adicione as variáveis de ambiente.");
       setLoading(false);
       return;

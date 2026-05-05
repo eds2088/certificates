@@ -23,7 +23,7 @@ export default function PlanoView() {
 
   useEffect(() => {
     async function load() {
-      if (!|| !supabase || !id) {
+      if (!id) {
         setLoading(false);
         return;
       }
@@ -115,7 +115,7 @@ export default function PlanoView() {
   }
 
   async function toggleSessao(sessaoId: string) {
-    if (!supabase || !plano || !conteudo) return;
+    if (!plano || !conteudo) return;
     const updatedSessoes = conteudo.sessoes.map((s) =>
       s.id === sessaoId ? { ...s, concluida: !s.concluida } : s
     );

@@ -23,7 +23,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function load() {
-      if (!|| !supabase || !profile) {
+      if (!profile) {
         setLoading(false);
         return;
       }

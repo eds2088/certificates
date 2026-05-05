@@ -54,7 +54,7 @@ export default function Onboarding() {
     setError(null);
     setLoading(true);
 
-    if (!|| !supabase || !user) {
+    if (!user) {
       setError("Configure o Supabase para finalizar o cadastro.");
       setLoading(false);
       return;

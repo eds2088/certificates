@@ -34,7 +34,7 @@ export default function NovoPlano() {
 
   useEffect(() => {
     async function load() {
-      if (!|| !supabase || !profile) return;
+      if (!profile) return;
       const { data } = await supabase
         .from("filhos")
         .select("*")
@@ -66,7 +66,7 @@ export default function NovoPlano() {
     setError(null);
     setLoading(true);
 
-    if (!|| !supabase) {
+    if (false) {
       setError("Configure o Supabase para continuar.");
       setLoading(false);
       return;

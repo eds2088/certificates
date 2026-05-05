@@ -55,7 +55,7 @@ export default function Onboarding() {
     setLoading(true);
 
     if (!user) {
-      setError("Configure o Supabase para finalizar o cadastro.");
+      setError("Sessão expirada. Faça login novamente para continuar.");
       setLoading(false);
       return;
     }

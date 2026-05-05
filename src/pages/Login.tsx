@@ -26,6 +26,16 @@ export default function Login() {
     }
   }
 
+  async function handleApple() {
+    setError(null);
+    const result = await lovable.auth.signInWithOAuth("apple", {
+      redirect_uri: window.location.origin + "/dashboard",
+    });
+    if (result.error) {
+      setError("Não foi possível entrar com a Apple.");
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -112,6 +122,13 @@ export default function Login() {
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.04l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/>
               </svg>
               Continuar com Google
+            </Button>
+
+            <Button type="button" variant="outline" size="lg" className="w-full" onClick={handleApple}>
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                <path d="M16.365 1.43c0 1.14-.466 2.234-1.225 3.02-.804.84-2.116 1.49-3.205 1.402-.135-1.108.43-2.265 1.169-3.013.83-.84 2.244-1.466 3.261-1.41zM20.5 17.34c-.55 1.27-.812 1.836-1.522 2.96-.99 1.566-2.388 3.516-4.122 3.532-1.541.014-1.937-1.004-4.027-.992-2.09.011-2.527 1.01-4.07.996-1.733-.016-3.057-1.776-4.047-3.342C-.04 16.103-.33 11.04 1.41 8.342c1.235-1.916 3.187-3.04 5.022-3.04 1.866 0 3.04 1.025 4.582 1.025 1.497 0 2.41-1.026 4.57-1.026 1.633 0 3.363.89 4.594 2.428-4.038 2.213-3.382 7.98.322 9.61z"/>
+              </svg>
+              Continuar com Apple
             </Button>
           </form>
 

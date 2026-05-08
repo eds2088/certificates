@@ -114,6 +114,7 @@ function withIds(plano: Record<string, unknown>) {
     alternativas: Array.isArray(e.alternativas) ? e.alternativas.map(String) : undefined,
     resposta_correta: String(e.resposta_correta),
     explicacao: e.explicacao ? String(e.explicacao) : undefined,
+    tipo: e.tipo === "modelo" || e.tipo === "guiado" || e.tipo === "livre" ? e.tipo : undefined,
   }));
   return {
     resumo: String(plano.resumo),

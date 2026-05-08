@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/hooks/useAuth";
+import { Toaster } from "@/components/ui/sonner";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -44,6 +45,6 @@ export const Route = createRootRoute({
       <body>{children}<Scripts /></body>
     </html>
   ),
-  component: () => <AuthProvider><Outlet /></AuthProvider>,
+  component: () => <AuthProvider><Outlet /><Toaster /></AuthProvider>,
   notFoundComponent: NotFoundComponent,
 });

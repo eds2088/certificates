@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { Image, decode as decodeImage } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 import { SYSTEM_PROMPT, buildUserPrompt, AI_CONFIG, PROMPT_VERSION } from "./prompts/index.ts";
 
 const corsHeaders = {
@@ -71,6 +72,64 @@ function blobToBase64(buf: ArrayBuffer): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+const MAX_SIDE = 1280;
+const TARGET_KB = 400;
+const HARD_LIMIT_KB = 600;
+
+async function compressImage(
+  raw: Uint8Array,
+  mime: string,
+  path: string,
+): Promise<{ dataUrl: string; sizeKb: number }> {
+  // PDFs e formatos não-imagem: passa direto (gemini aceita pdf via image_url? não — então só repassa imagem)
+  if (!mime.startsWith("image/")) {
+    const sizeKb = Math.round(raw.byteLength / 1024);
+    return {
+      dataUrl: `data:${mime};base64,${bytesToBase64(raw)}`,
+      sizeKb,
+    };
+  }
+  let img;
+  try {
+    img = await decodeImage(raw);
+  } catch (e) {
+    throw new Error(`falha decode ${path}: ${(e as Error).message}`);
+  }
+  // Resize se necessário
+  const maxSide = Math.max(img.width, img.height);
+  if (maxSide > MAX_SIDE) {
+    const scale = MAX_SIDE / maxSide;
+    img.resize(Math.round(img.width * scale), Math.round(img.height * scale));
+  }
+  // Encoda JPEG quality 65
+  let encoded = await (img as Image).encodeJPEG(65);
+  let sizeKb = Math.round(encoded.byteLength / 1024);
+  // Se ainda passar do hard limit, tenta re-encode quality 50
+  if (sizeKb > HARD_LIMIT_KB) {
+    encoded = await (img as Image).encodeJPEG(50);
+    sizeKb = Math.round(encoded.byteLength / 1024);
+  }
+  if (sizeKb > HARD_LIMIT_KB) {
+    const err: any = new Error("imagem_muito_pesada");
+    err.codigo = "imagem_muito_pesada";
+    err.mensagem = "Uma das fotos está muito grande. Tente reenviar com resolução menor.";
+    throw err;
+  }
+  return {
+    dataUrl: `data:image/jpeg;base64,${bytesToBase64(encoded)}`,
+    sizeKb,
+  };
 }
 
 function mimeFromPath(path: string, fallback = "image/jpeg"): string {
@@ -153,7 +212,11 @@ Deno.serve(async (req) => {
     const paths: string[] = body.paths;
     const observacoes: string = body.observacoes ?? "";
 
-    console.log("[gerar-plano] inicio", { plano_id, paths: paths.length });
+    console.log("[gerar-plano] inicio", { plano_id, paths_count: paths.length });
+
+    if (paths.length > 5) {
+      throw new Error("Máximo de 5 imagens por plano.");
+    }
 
     // 1. Buscar plano
     const { data: plano, error: ePlano } = await supabase
@@ -171,18 +234,58 @@ Deno.serve(async (req) => {
       .single();
     if (eFilho || !filho) throw new Error(`filho nao encontrado: ${eFilho?.message}`);
 
-    // 3. Baixar imagens
-    const imagens: { dataUrl: string }[] = [];
-    for (const p of paths) {
-      const { data: blob, error: eDl } = await supabase.storage
-        .from("materiais-prova")
-        .download(p);
-      if (eDl || !blob) throw new Error(`falha download ${p}: ${eDl?.message}`);
-      const buf = await blob.arrayBuffer();
-      const mime = blob.type && blob.type.startsWith("image/") ? blob.type : mimeFromPath(p);
-      imagens.push({ dataUrl: `data:${mime};base64,${blobToBase64(buf)}` });
+    // 3. Baixar imagens em paralelo
+    const downloads = await Promise.all(
+      paths.map(async (p) => {
+        const { data: blob, error: eDl } = await supabase.storage
+          .from("materiais-prova")
+          .download(p);
+        if (eDl || !blob) throw new Error(`falha download ${p}: ${eDl?.message}`);
+        const buf = new Uint8Array(await blob.arrayBuffer());
+        const mime = blob.type && blob.type.startsWith("image/") ? blob.type : mimeFromPath(p);
+        return { path: p, raw: buf, mime };
+      }),
+    );
+    const totalBytesRaw = downloads.reduce((s, d) => s + d.raw.byteLength, 0);
+    console.log("[gerar-plano] imagens baixadas", {
+      count: downloads.length,
+      total_bytes_raw: totalBytesRaw,
+    });
+
+    // 3b. Comprimir em paralelo
+    const compressStart = Date.now();
+    let imagens: { dataUrl: string; sizeKb: number }[];
+    try {
+      imagens = await Promise.all(
+        downloads.map((d) => compressImage(d.raw, d.mime, d.path)),
+      );
+    } catch (e: any) {
+      if (e?.codigo === "imagem_muito_pesada") {
+        await supabase
+          .from("planos")
+          .update({
+            status: "erro",
+            erro_codigo: e.codigo,
+            erro_mensagem: e.mensagem,
+            prompt_version: PROMPT_VERSION,
+            imagens_count: paths.length,
+          })
+          .eq("id", plano_id);
+        return new Response(
+          JSON.stringify({ success: false, plano_id, codigo: e.codigo, mensagem: e.mensagem }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      throw e;
     }
-    console.log("[gerar-plano] imagens baixadas", imagens.length);
+    const compressionMs = Date.now() - compressStart;
+    const totalBytesAfter = imagens.reduce((s, i) => s + Math.round(i.sizeKb * 1024), 0);
+    console.log("[gerar-plano] imagens comprimidas", {
+      count: imagens.length,
+      total_bytes_after: totalBytesAfter,
+      individual_sizes_kb: imagens.map((i) => i.sizeKb),
+      compression_ms: compressionMs,
+    });
 
     // 4. Chamar Lovable AI Gateway usando prompt v3
     const diasAteProva = Math.max(
@@ -215,6 +318,11 @@ Deno.serve(async (req) => {
       response_format: { type: "json_object" as const },
     };
 
+    const payloadKb = Math.round(JSON.stringify(aiBody).length / 1024);
+    let modelUsed = AI_CONFIG.model;
+    console.log("[gerar-plano] chamando IA", { model: modelUsed, payload_kb: payloadKb });
+
+    const aiStart = Date.now();
     let aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -224,29 +332,41 @@ Deno.serve(async (req) => {
       body: JSON.stringify(aiBody),
     });
 
-    // Fallback se modelo nao disponivel
-    if (aiResp.status === 400 || aiResp.status === 404) {
+    // Fallback uma única vez se 4xx
+    if (aiResp.status >= 400 && aiResp.status < 500 && aiResp.status !== 429 && aiResp.status !== 402) {
       const txt = await aiResp.text();
-      console.warn("[gerar-plano] modelo principal falhou, tentando fallback", aiResp.status, txt);
+      console.warn("[gerar-plano] modelo principal falhou, tentando fallback", {
+        status: aiResp.status,
+        body_first_200: txt.slice(0, 200),
+      });
+      modelUsed = (AI_CONFIG as any).model_fallback ?? "google/gemini-2.5-flash-lite";
       aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ ...aiBody, model: "google/gemini-2.5-flash" }),
+        body: JSON.stringify({ ...aiBody, model: modelUsed }),
       });
     }
+    const latencyMs = Date.now() - aiStart;
 
     if (aiResp.status === 429) throw new Error("Limite de requisicoes atingido. Tente novamente em alguns minutos.");
     if (aiResp.status === 402) throw new Error("Creditos de IA esgotados. Adicione creditos em Settings > Workspace > Usage.");
     if (!aiResp.ok) {
       const t = await aiResp.text();
-      throw new Error(`AI gateway erro ${aiResp.status}: ${t}`);
+      console.error("[gerar-plano] IA erro", { status: aiResp.status, body_first_500: t.slice(0, 500) });
+      throw new Error(`AI gateway erro ${aiResp.status}: ${t.slice(0, 200)}`);
     }
 
     const aiJson = await aiResp.json();
     const rawContent = aiJson.choices?.[0]?.message?.content;
+    console.log("[gerar-plano] IA respondeu", {
+      status: aiResp.status,
+      latency_ms: latencyMs,
+      model: modelUsed,
+      response_first_200_chars: typeof rawContent === "string" ? rawContent.slice(0, 200) : null,
+    });
     if (typeof rawContent !== "string" || !rawContent.trim()) {
       throw new Error("IA nao retornou conteudo");
     }
@@ -257,6 +377,10 @@ Deno.serve(async (req) => {
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
+      console.error("[gerar-plano] parse JSON falhou", {
+        erro: (e as Error).message,
+        raw_first_500: rawContent.slice(0, 500),
+      });
       throw new Error(`JSON invalido da IA: ${(e as Error).message}`);
     }
 
@@ -269,8 +393,12 @@ Deno.serve(async (req) => {
         .from("planos")
         .update({
           status: "erro",
+          erro_codigo: codigo,
           erro_mensagem: mensagem,
           prompt_version: PROMPT_VERSION,
+          latency_ms: latencyMs,
+          imagens_count: imagens.length,
+          payload_kb: payloadKb,
         })
         .eq("id", plano_id);
       return new Response(
@@ -288,8 +416,12 @@ Deno.serve(async (req) => {
       .update({
         status: "ativo",
         conteudo_json: conteudo,
+        erro_codigo: null,
         erro_mensagem: null,
         prompt_version: PROMPT_VERSION,
+        latency_ms: latencyMs,
+        imagens_count: imagens.length,
+        payload_kb: payloadKb,
       })
       .eq("id", plano_id);
     if (eUp) throw new Error(`falha ao atualizar plano: ${eUp.message}`);

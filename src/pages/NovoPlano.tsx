@@ -212,12 +212,11 @@ export default function NovoPlano() {
               <label className="mt-6 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-input bg-secondary/40 py-12 transition-colors hover:border-primary/50 hover:bg-primary/5">
                 <Camera size={32} className="text-primary" />
                 <p className="font-display font-semibold">Adicionar fotos</p>
-                <p className="text-xs text-muted-foreground">JPG, PNG · até 6 imagens</p>
+                <p className="text-xs text-muted-foreground">JPG, PNG, PDF · até 6 arquivos</p>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   multiple
-                  capture="environment"
                   className="hidden"
                   onChange={handleFiles}
                 />

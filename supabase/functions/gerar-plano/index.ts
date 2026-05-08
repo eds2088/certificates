@@ -294,6 +294,9 @@ Deno.serve(async (req) => {
         latency_ms: latencyMs,
         imagens_count: imagens.length,
         payload_kb: payloadKb,
+        flashcards_count: conteudo.flashcards.length,
+        exercicios_count: conteudo.exercicios.length,
+        sessoes_count: conteudo.sessoes.length,
       })
       .eq("id", plano_id);
     if (eUp) throw new Error(`falha ao atualizar plano: ${eUp.message}`);

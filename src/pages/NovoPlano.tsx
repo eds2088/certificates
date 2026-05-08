@@ -212,12 +212,11 @@ export default function NovoPlano() {
               <label className="mt-6 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-input bg-secondary/40 py-12 transition-colors hover:border-primary/50 hover:bg-primary/5">
                 <Camera size={32} className="text-primary" />
                 <p className="font-display font-semibold">Adicionar fotos</p>
-                <p className="text-xs text-muted-foreground">JPG, PNG · até 6 imagens</p>
+                <p className="text-xs text-muted-foreground">JPG, PNG, PDF · até 6 arquivos</p>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   multiple
-                  capture="environment"
                   className="hidden"
                   onChange={handleFiles}
                 />
@@ -225,13 +224,22 @@ export default function NovoPlano() {
 
               {fotos.length > 0 && (
                 <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4">
-                  {fotos.map((f, idx) => (
+                  {fotos.map((f, idx) => {
+                    const isPdf = f.type === "application/pdf";
+                    return (
                     <div key={idx} className="relative">
-                      <img
-                        src={URL.createObjectURL(f)}
-                        alt={`Material ${idx + 1}`}
-                        className="aspect-square w-full rounded-xl object-cover"
-                      />
+                      {isPdf ? (
+                        <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-xl border bg-secondary/40 p-2 text-center">
+                          <BookOpen size={24} className="text-primary" />
+                          <span className="line-clamp-2 break-all text-[10px] text-muted-foreground">{f.name}</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={URL.createObjectURL(f)}
+                          alt={`Material ${idx + 1}`}
+                          className="aspect-square w-full rounded-xl object-cover"
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => removeFoto(idx)}
@@ -241,7 +249,8 @@ export default function NovoPlano() {
                         <X size={14} />
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

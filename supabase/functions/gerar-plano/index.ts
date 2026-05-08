@@ -39,14 +39,23 @@ function mimeFromPath(path: string, fallback = "image/jpeg"): string {
 function validatePlano(p: unknown): asserts p is Record<string, unknown> {
   if (!p || typeof p !== "object") throw new Error("conteudo invalido: nao e objeto");
   const o = p as Record<string, unknown>;
-  if (typeof o.resumo !== "string" || !o.resumo.trim()) throw new Error("resumo ausente");
-  if (!Array.isArray(o.topicos) || o.topicos.length < 1) throw new Error("topicos invalidos");
-  if (!Array.isArray(o.sessoes) || o.sessoes.length < 3 || o.sessoes.length > 6)
-    throw new Error("sessoes deve ter entre 3 e 6 itens");
-  if (!Array.isArray(o.flashcards) || o.flashcards.length < 8 || o.flashcards.length > 12)
-    throw new Error("flashcards deve ter entre 8 e 12 itens");
-  if (!Array.isArray(o.exercicios) || o.exercicios.length < 4 || o.exercicios.length > 8)
-    throw new Error("exercicios deve ter entre 4 e 8 itens");
+  // Erros fatais: estrutura/tipos/vazio
+  if (typeof o.resumo !== "string" || o.resumo.trim().length < 20)
+    throw new Error("resumo ausente ou muito curto (<20 chars)");
+  if (!Array.isArray(o.topicos) || o.topicos.length < 1) throw new Error("topicos ausentes ou invalidos");
+  if (!Array.isArray(o.sessoes) || o.sessoes.length < 1) throw new Error("sessoes ausentes ou invalidas");
+  if (!Array.isArray(o.flashcards) || o.flashcards.length < 1) throw new Error("flashcards ausentes ou invalidos");
+  if (!Array.isArray(o.exercicios) || o.exercicios.length < 1) throw new Error("exercicios ausentes ou invalidos");
+
+  // Warnings: quantidades fora do range ideal — aceita mesmo assim
+  const t = (o.topicos as unknown[]).length;
+  if (t < 2 || t > 6) console.warn("[gerar-plano] topicos fora do range ideal", { count: t, expected: "2-6" });
+  const s = (o.sessoes as unknown[]).length;
+  if (s < 2 || s > 8) console.warn("[gerar-plano] sessoes fora do range ideal", { count: s, expected: "3-6" });
+  const f = (o.flashcards as unknown[]).length;
+  if (f < 6 || f > 15) console.warn("[gerar-plano] flashcards fora do range ideal", { count: f, expected: "8-12" });
+  const e = (o.exercicios as unknown[]).length;
+  if (e < 4 || e > 12) console.warn("[gerar-plano] exercicios fora do range ideal", { count: e, expected: "4-8" });
 }
 
 function withIds(plano: Record<string, unknown>) {
@@ -285,6 +294,9 @@ Deno.serve(async (req) => {
         latency_ms: latencyMs,
         imagens_count: imagens.length,
         payload_kb: payloadKb,
+        flashcards_count: conteudo.flashcards.length,
+        exercicios_count: conteudo.exercicios.length,
+        sessoes_count: conteudo.sessoes.length,
       })
       .eq("id", plano_id);
     if (eUp) throw new Error(`falha ao atualizar plano: ${eUp.message}`);

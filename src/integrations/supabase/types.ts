@@ -179,13 +179,16 @@ export type Database = {
           disciplina: string
           erro_codigo: string | null
           erro_mensagem: string | null
+          exercicios_count: number | null
           filho_id: string
+          flashcards_count: number | null
           id: string
           imagens_count: number | null
           latency_ms: number | null
           observacoes: string | null
           payload_kb: number | null
           prompt_version: string
+          sessoes_count: number | null
           status: Database["public"]["Enums"]["status_plano"]
         }
         Insert: {
@@ -196,13 +199,16 @@ export type Database = {
           disciplina: string
           erro_codigo?: string | null
           erro_mensagem?: string | null
+          exercicios_count?: number | null
           filho_id: string
+          flashcards_count?: number | null
           id?: string
           imagens_count?: number | null
           latency_ms?: number | null
           observacoes?: string | null
           payload_kb?: number | null
           prompt_version?: string
+          sessoes_count?: number | null
           status?: Database["public"]["Enums"]["status_plano"]
         }
         Update: {
@@ -213,13 +219,16 @@ export type Database = {
           disciplina?: string
           erro_codigo?: string | null
           erro_mensagem?: string | null
+          exercicios_count?: number | null
           filho_id?: string
+          flashcards_count?: number | null
           id?: string
           imagens_count?: number | null
           latency_ms?: number | null
           observacoes?: string | null
           payload_kb?: number | null
           prompt_version?: string
+          sessoes_count?: number | null
           status?: Database["public"]["Enums"]["status_plano"]
         }
         Relationships: [

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { SYSTEM_PROMPT, buildUserPrompt, AI_CONFIG, PROMPT_VERSION } from "./prompts/index.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -182,28 +183,26 @@ Deno.serve(async (req) => {
     }
     console.log("[gerar-plano] imagens baixadas", imagens.length);
 
-    // 4. Chamar Lovable AI Gateway com tool calling
-    const systemPrompt = `Voce e a Ju, uma tutora carinhosa e didatica especializada em criancas do Ensino Fundamental brasileiro. Voce monta planos de estudo curtos, claros e divertidos, adaptados a idade da crianca.`;
-
-    const userText = `Crie um plano de estudos para a prova abaixo, com base nas fotos do material enviadas.
-
-Aluno: ${filho.nome} (${filho.ano_escolar})
-Disciplina: ${plano.disciplina}
-Data da prova: ${plano.data_prova}
-${observacoes ? `Observacoes do responsavel: ${observacoes}` : ""}
-
-Regras:
-- Linguagem adequada a idade do aluno.
-- Sessoes de 15 a 45 minutos, com objetivos concretos.
-- Flashcards curtos (frente=pergunta, verso=resposta direta).
-- Exercicios com enunciado claro e resposta correta; inclua alternativas quando fizer sentido.
-
-Use a funcao "salvar_plano" para devolver o resultado estruturado.`;
+    // 4. Chamar Lovable AI Gateway usando prompt v3
+    const diasAteProva = Math.max(
+      0,
+      Math.ceil((new Date(plano.data_prova).getTime() - Date.now()) / 86400000),
+    );
+    const userText = buildUserPrompt({
+      filho_nome: filho.nome,
+      ano_escolar: filho.ano_escolar,
+      disciplina: plano.disciplina,
+      data_prova: plano.data_prova,
+      dias_ate_prova: diasAteProva,
+      observacoes_pais: observacoes || undefined,
+    });
 
     const aiBody = {
-      model: "google/gemini-2.0-flash-exp",
+      model: AI_CONFIG.model,
+      temperature: AI_CONFIG.temperature,
+      max_tokens: AI_CONFIG.max_tokens,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
           content: [
@@ -212,17 +211,7 @@ Use a funcao "salvar_plano" para devolver o resultado estruturado.`;
           ],
         },
       ],
-      tools: [
-        {
-          type: "function",
-          function: {
-            name: "salvar_plano",
-            description: "Salva o plano de estudos estruturado.",
-            parameters: PLANO_SCHEMA,
-          },
-        },
-      ],
-      tool_choice: { type: "function", function: { name: "salvar_plano" } },
+      response_format: { type: "json_object" as const },
     };
 
     let aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -256,17 +245,51 @@ Use a funcao "salvar_plano" para devolver o resultado estruturado.`;
     }
 
     const aiJson = await aiResp.json();
-    const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) throw new Error("IA nao retornou tool call");
+    const rawContent = aiJson.choices?.[0]?.message?.content;
+    if (typeof rawContent !== "string" || !rawContent.trim()) {
+      throw new Error("IA nao retornou conteudo");
+    }
 
-    const parsed = JSON.parse(toolCall.function.arguments);
+    // Limpa eventual cerca markdown
+    const cleaned = rawContent.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      throw new Error(`JSON invalido da IA: ${(e as Error).message}`);
+    }
+
+    // 4b. Fallback estruturado da IA
+    if (parsed && parsed.erro === true) {
+      const codigo = String(parsed.codigo ?? "desconhecido");
+      const mensagem = String(parsed.mensagem ?? "Nao foi possivel gerar o plano.");
+      console.warn("[gerar-plano] IA retornou erro estruturado", { plano_id, codigo, mensagem });
+      await supabase
+        .from("planos")
+        .update({
+          status: "erro",
+          erro_mensagem: mensagem,
+          prompt_version: PROMPT_VERSION,
+        })
+        .eq("id", plano_id);
+      return new Response(
+        JSON.stringify({ success: false, plano_id, codigo, mensagem }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     validatePlano(parsed);
     const conteudo = withIds(parsed);
 
     // 5. Atualizar plano
     const { error: eUp } = await supabase
       .from("planos")
-      .update({ status: "ativo", conteudo_json: conteudo })
+      .update({
+        status: "ativo",
+        conteudo_json: conteudo,
+        erro_mensagem: null,
+        prompt_version: PROMPT_VERSION,
+      })
       .eq("id", plano_id);
     if (eUp) throw new Error(`falha ao atualizar plano: ${eUp.message}`);
 
@@ -279,7 +302,10 @@ Use a funcao "salvar_plano" para devolver o resultado estruturado.`;
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[gerar-plano] erro", msg);
     if (plano_id) {
-      await supabase.from("planos").update({ status: "erro" }).eq("id", plano_id);
+      await supabase
+        .from("planos")
+        .update({ status: "erro", erro_mensagem: msg, prompt_version: PROMPT_VERSION })
+        .eq("id", plano_id);
     }
     return new Response(JSON.stringify({ success: false, error: msg }), {
       status: 500,

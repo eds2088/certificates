@@ -91,7 +91,8 @@ export default function PlanoView() {
           <AlertCircle size={48} className="mx-auto text-destructive" />
           <h1 className="mt-4 font-display text-2xl font-bold">Algo deu errado</h1>
           <p className="mt-2 text-muted-foreground">
-            Não conseguimos analisar o material. Verifique se as fotos estão legíveis e tente de novo.
+            {plano.erro_mensagem ||
+              "Não conseguimos analisar o material. Verifique se as fotos estão legíveis e tente de novo."}
           </p>
           <Button asChild className="mt-6">
             <Link to="/novo-plano">Tentar novamente</Link>

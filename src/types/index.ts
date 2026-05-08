@@ -42,6 +42,8 @@ export interface Plano {
   status: StatusPlano;
   conteudo_json: PlanoConteudo | null;
   criado_em: string;
+  erro_mensagem?: string | null;
+  prompt_version?: string | null;
 }
 
 export interface PlanoConteudo {
@@ -50,6 +52,8 @@ export interface PlanoConteudo {
   sessoes: SessaoEstudo[];
   flashcards: Flashcard[];
   exercicios: Exercicio[];
+  erro?: boolean;
+  codigo?: string;
 }
 
 export interface SessaoEstudo {
@@ -72,4 +76,5 @@ export interface Exercicio {
   alternativas?: string[];
   resposta_correta: string;
   explicacao?: string;
+  tipo?: "modelo" | "guiado" | "livre";
 }

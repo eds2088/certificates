@@ -252,13 +252,17 @@ Deno.serve(async (req) => {
       total_bytes_raw: totalBytesRaw,
     });
 
-    // 3b. Comprimir em paralelo
+    // 3b. Comprimir SEQUENCIALMENTE (paralelo estoura memória da Edge Function)
     const compressStart = Date.now();
-    let imagens: { dataUrl: string; sizeKb: number }[];
+    const imagens: { dataUrl: string; sizeKb: number }[] = [];
     try {
-      imagens = await Promise.all(
-        downloads.map((d) => compressImage(d.raw, d.mime, d.path)),
-      );
+      for (let i = 0; i < downloads.length; i++) {
+        const d = downloads[i];
+        const out = await compressImage(d.raw, d.mime, d.path);
+        imagens.push(out);
+        // libera buffer raw assim que possível
+        (downloads[i] as any).raw = null;
+      }
     } catch (e: any) {
       if (e?.codigo === "imagem_muito_pesada") {
         await supabase

@@ -1,5 +1,10 @@
+// Edge Function: gerar-plano
+// v3.0.2 — A compressão/redimensionamento de imagens foi MOVIDA PARA O CLIENTE
+// (src/lib/imageCompression.ts). O runtime da Edge Function não tem CPU/memória
+// suficiente para processar fotos cruas de smartphone. Aqui só baixamos do
+// Storage (já otimizadas), convertemos para base64 e mandamos para a IA.
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { Image, decode as decodeImage } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 import { SYSTEM_PROMPT, buildUserPrompt, AI_CONFIG, PROMPT_VERSION } from "./prompts/index.ts";
 
 const corsHeaders = {
@@ -12,68 +17,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
-const PLANO_SCHEMA = {
-  type: "object",
-  properties: {
-    resumo: { type: "string", description: "Resumo curto e amigável do que será estudado." },
-    topicos: { type: "array", items: { type: "string" }, minItems: 1 },
-    sessoes: {
-      type: "array",
-      minItems: 3,
-      maxItems: 6,
-      items: {
-        type: "object",
-        properties: {
-          titulo: { type: "string" },
-          duracao_min: { type: "integer", minimum: 10, maximum: 60 },
-          objetivos: { type: "array", items: { type: "string" }, minItems: 1 },
-        },
-        required: ["titulo", "duracao_min", "objetivos"],
-      },
-    },
-    flashcards: {
-      type: "array",
-      minItems: 8,
-      maxItems: 12,
-      items: {
-        type: "object",
-        properties: {
-          frente: { type: "string" },
-          verso: { type: "string" },
-        },
-        required: ["frente", "verso"],
-      },
-    },
-    exercicios: {
-      type: "array",
-      minItems: 4,
-      maxItems: 8,
-      items: {
-        type: "object",
-        properties: {
-          enunciado: { type: "string" },
-          alternativas: { type: "array", items: { type: "string" } },
-          resposta_correta: { type: "string" },
-          explicacao: { type: "string" },
-        },
-        required: ["enunciado", "resposta_correta"],
-      },
-    },
-  },
-  required: ["resumo", "topicos", "sessoes", "flashcards", "exercicios"],
-  additionalProperties: false,
-} as const;
-
-function blobToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   const chunk = 0x8000;
@@ -83,61 +26,13 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-const MAX_SIDE = 1280;
-const TARGET_KB = 400;
-const HARD_LIMIT_KB = 600;
-
-async function compressImage(
-  raw: Uint8Array,
-  mime: string,
-  path: string,
-): Promise<{ dataUrl: string; sizeKb: number }> {
-  // PDFs e formatos não-imagem: passa direto (gemini aceita pdf via image_url? não — então só repassa imagem)
-  if (!mime.startsWith("image/")) {
-    const sizeKb = Math.round(raw.byteLength / 1024);
-    return {
-      dataUrl: `data:${mime};base64,${bytesToBase64(raw)}`,
-      sizeKb,
-    };
-  }
-  let img;
-  try {
-    img = await decodeImage(raw);
-  } catch (e) {
-    throw new Error(`falha decode ${path}: ${(e as Error).message}`);
-  }
-  // Resize se necessário
-  const maxSide = Math.max(img.width, img.height);
-  if (maxSide > MAX_SIDE) {
-    const scale = MAX_SIDE / maxSide;
-    img.resize(Math.round(img.width * scale), Math.round(img.height * scale));
-  }
-  // Encoda JPEG quality 65
-  let encoded = await (img as Image).encodeJPEG(65);
-  let sizeKb = Math.round(encoded.byteLength / 1024);
-  // Se ainda passar do hard limit, tenta re-encode quality 50
-  if (sizeKb > HARD_LIMIT_KB) {
-    encoded = await (img as Image).encodeJPEG(50);
-    sizeKb = Math.round(encoded.byteLength / 1024);
-  }
-  if (sizeKb > HARD_LIMIT_KB) {
-    const err: any = new Error("imagem_muito_pesada");
-    err.codigo = "imagem_muito_pesada";
-    err.mensagem = "Uma das fotos está muito grande. Tente reenviar com resolução menor.";
-    throw err;
-  }
-  return {
-    dataUrl: `data:image/jpeg;base64,${bytesToBase64(encoded)}`,
-    sizeKb,
-  };
-}
-
 function mimeFromPath(path: string, fallback = "image/jpeg"): string {
   const ext = path.split(".").pop()?.toLowerCase();
   if (ext === "png") return "image/png";
   if (ext === "webp") return "image/webp";
   if (ext === "gif") return "image/gif";
   if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "pdf") return "application/pdf";
   return fallback;
 }
 
@@ -218,7 +113,7 @@ Deno.serve(async (req) => {
       throw new Error("Máximo de 5 imagens por plano.");
     }
 
-    // 1. Buscar plano
+    // 1. Buscar plano + filho
     const { data: plano, error: ePlano } = await supabase
       .from("planos")
       .select("disciplina, data_prova, filho_id")
@@ -226,7 +121,6 @@ Deno.serve(async (req) => {
       .single();
     if (ePlano || !plano) throw new Error(`plano nao encontrado: ${ePlano?.message}`);
 
-    // 2. Buscar filho
     const { data: filho, error: eFilho } = await supabase
       .from("filhos")
       .select("nome, ano_escolar")
@@ -234,8 +128,8 @@ Deno.serve(async (req) => {
       .single();
     if (eFilho || !filho) throw new Error(`filho nao encontrado: ${eFilho?.message}`);
 
-    // 3. Baixar imagens em paralelo
-    const downloads = await Promise.all(
+    // 2. Baixar imagens (já comprimidas pelo cliente) em paralelo e converter pra base64
+    const imagens = await Promise.all(
       paths.map(async (p) => {
         const { data: blob, error: eDl } = await supabase.storage
           .from("materiais-prova")
@@ -243,55 +137,20 @@ Deno.serve(async (req) => {
         if (eDl || !blob) throw new Error(`falha download ${p}: ${eDl?.message}`);
         const buf = new Uint8Array(await blob.arrayBuffer());
         const mime = blob.type && blob.type.startsWith("image/") ? blob.type : mimeFromPath(p);
-        return { path: p, raw: buf, mime };
+        return {
+          dataUrl: `data:${mime};base64,${bytesToBase64(buf)}`,
+          sizeKb: Math.round(buf.byteLength / 1024),
+        };
       }),
     );
-    const totalBytesRaw = downloads.reduce((s, d) => s + d.raw.byteLength, 0);
+    const totalKb = imagens.reduce((s, i) => s + i.sizeKb, 0);
     console.log("[gerar-plano] imagens baixadas", {
-      count: downloads.length,
-      total_bytes_raw: totalBytesRaw,
-    });
-
-    // 3b. Comprimir SEQUENCIALMENTE (paralelo estoura memória da Edge Function)
-    const compressStart = Date.now();
-    const imagens: { dataUrl: string; sizeKb: number }[] = [];
-    try {
-      for (let i = 0; i < downloads.length; i++) {
-        const d = downloads[i];
-        const out = await compressImage(d.raw, d.mime, d.path);
-        imagens.push(out);
-        // libera buffer raw assim que possível
-        (downloads[i] as any).raw = null;
-      }
-    } catch (e: any) {
-      if (e?.codigo === "imagem_muito_pesada") {
-        await supabase
-          .from("planos")
-          .update({
-            status: "erro",
-            erro_codigo: e.codigo,
-            erro_mensagem: e.mensagem,
-            prompt_version: PROMPT_VERSION,
-            imagens_count: paths.length,
-          })
-          .eq("id", plano_id);
-        return new Response(
-          JSON.stringify({ success: false, plano_id, codigo: e.codigo, mensagem: e.mensagem }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-      throw e;
-    }
-    const compressionMs = Date.now() - compressStart;
-    const totalBytesAfter = imagens.reduce((s, i) => s + Math.round(i.sizeKb * 1024), 0);
-    console.log("[gerar-plano] imagens comprimidas", {
       count: imagens.length,
-      total_bytes_after: totalBytesAfter,
       individual_sizes_kb: imagens.map((i) => i.sizeKb),
-      compression_ms: compressionMs,
+      total_kb: totalKb,
     });
 
-    // 4. Chamar Lovable AI Gateway usando prompt v3
+    // 3. Montar payload IA
     const diasAteProva = Math.max(
       0,
       Math.ceil((new Date(plano.data_prova).getTime() - Date.now()) / 86400000),
@@ -336,7 +195,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify(aiBody),
     });
 
-    // Fallback uma única vez se 4xx
+    // 4. Fallback uma única vez se 4xx (modelo indisponível)
     if (aiResp.status >= 400 && aiResp.status < 500 && aiResp.status !== 429 && aiResp.status !== 402) {
       const txt = await aiResp.text();
       console.warn("[gerar-plano] modelo principal falhou, tentando fallback", {
@@ -375,7 +234,7 @@ Deno.serve(async (req) => {
       throw new Error("IA nao retornou conteudo");
     }
 
-    // Limpa eventual cerca markdown
+    // 5. Parse + validação
     const cleaned = rawContent.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
     let parsed: any;
     try {
@@ -388,7 +247,7 @@ Deno.serve(async (req) => {
       throw new Error(`JSON invalido da IA: ${(e as Error).message}`);
     }
 
-    // 4b. Fallback estruturado da IA
+    // 5b. Fallback estruturado da IA
     if (parsed && parsed.erro === true) {
       const codigo = String(parsed.codigo ?? "desconhecido");
       const mensagem = String(parsed.mensagem ?? "Nao foi possivel gerar o plano.");
@@ -414,7 +273,7 @@ Deno.serve(async (req) => {
     validatePlano(parsed);
     const conteudo = withIds(parsed);
 
-    // 5. Atualizar plano
+    // 6. Atualizar plano
     const { error: eUp } = await supabase
       .from("planos")
       .update({
@@ -430,7 +289,7 @@ Deno.serve(async (req) => {
       .eq("id", plano_id);
     if (eUp) throw new Error(`falha ao atualizar plano: ${eUp.message}`);
 
-    console.log("[gerar-plano] sucesso", plano_id);
+    console.log("[gerar-plano] sucesso", { plano_id, latency_ms: latencyMs });
     return new Response(JSON.stringify({ success: true, plano_id }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

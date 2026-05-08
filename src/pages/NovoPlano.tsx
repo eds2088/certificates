@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { compressImage } from "@/lib/imageCompression";
 import type { Filho } from "@/types";
 
 const DISCIPLINAS = [
@@ -32,6 +33,8 @@ export default function NovoPlano() {
   const [fotos, setFotos] = useState<File[]>([]);
   const [observacoes, setObservacoes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "comprimindo" | "enviando" | "gerando">("idle");
+  const [compressedBytes, setCompressedBytes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const totalSteps = 3;
@@ -78,6 +81,7 @@ export default function NovoPlano() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    setCompressedBytes(null);
 
     if (false) {
       setError("Configure o Supabase para continuar.");
@@ -89,6 +93,17 @@ export default function NovoPlano() {
       if (overLimit) {
         throw new Error("As imagens estão muito pesadas. Tire fotos com qualidade menor ou reduza a quantidade.");
       }
+
+      // 0. Comprimir imagens no cliente em paralelo
+      setPhase("comprimindo");
+      const originalBytes = fotos.reduce((s, f) => s + f.size, 0);
+      const compressed = await Promise.all(fotos.map((f) => compressImage(f)));
+      const compBytes = compressed.reduce((s, f) => s + f.size, 0);
+      setCompressedBytes(compBytes);
+      console.log(
+        `[NovoPlano] compressão: ${(originalBytes / 1024 / 1024).toFixed(1)}MB → ${(compBytes / 1024 / 1024).toFixed(1)}MB`,
+      );
+
       // 1. Insert plano with status "gerando"
       const { data: plano, error: e1 } = await supabase
         .from("planos")
@@ -106,8 +121,9 @@ export default function NovoPlano() {
       // 2. Upload photos to Supabase Storage
       // LOVABLE: configurar bucket "materiais-prova" no Supabase, com RLS
       // permitindo apenas o responsável_id dono do filho gravar/ler.
+      setPhase("enviando");
       const uploads = await Promise.all(
-        fotos.map(async (file, idx) => {
+        compressed.map(async (file, idx) => {
           const path = `${plano.id}/${idx}-${Date.now()}.${file.name.split(".").pop()}`;
           const { error } = await supabase!
             .storage
@@ -122,6 +138,7 @@ export default function NovoPlano() {
       // LOVABLE: criar uma server function "gerar-plano" que recebe { plano_id, paths, observacoes }
       // e chama o Lovable AI Gateway (Gemini Vision) para gerar o conteudo_json,
       // depois atualiza o plano com status "ativo" e o conteudo_json populado.
+      setPhase("gerando");
       const { error: e3 } = await supabase.functions.invoke("gerar-plano", {
         body: { plano_id: plano.id, paths: uploads, observacoes },
       });
@@ -137,6 +154,7 @@ export default function NovoPlano() {
       const msg = err instanceof Error ? err.message : "Não conseguimos gerar seu plano agora. Verifique se as fotos estão legíveis e tente de novo.";
       setError(msg);
       setLoading(false);
+      setPhase("idle");
     }
   }
 
@@ -308,7 +326,17 @@ export default function NovoPlano() {
               {loading && (
                 <div className="mt-6 flex flex-col items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="animate-spin text-primary" size={24} />
-                  <p>Lendo as fotos e montando o plano… isso pode levar até 1 minuto.</p>
+                  <p>
+                    {phase === "comprimindo" && "Otimizando fotos…"}
+                    {phase === "enviando" && "Enviando…"}
+                    {phase === "gerando" && "Gerando plano… isso pode levar até 1 minuto."}
+                    {phase === "idle" && "Preparando…"}
+                  </p>
+                  {compressedBytes !== null && phase !== "comprimindo" && (
+                    <p className="text-xs">
+                      Fotos otimizadas: {(compressedBytes / 1024 / 1024).toFixed(1)} MB (de {(totalBytes / 1024 / 1024).toFixed(1)} MB originais)
+                    </p>
+                  )}
                 </div>
               )}
             </div>

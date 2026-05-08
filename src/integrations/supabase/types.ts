@@ -177,9 +177,11 @@ export type Database = {
           criado_em: string | null
           data_prova: string
           disciplina: string
+          erro_mensagem: string | null
           filho_id: string
           id: string
           observacoes: string | null
+          prompt_version: string
           status: Database["public"]["Enums"]["status_plano"]
         }
         Insert: {
@@ -188,9 +190,11 @@ export type Database = {
           criado_em?: string | null
           data_prova: string
           disciplina: string
+          erro_mensagem?: string | null
           filho_id: string
           id?: string
           observacoes?: string | null
+          prompt_version?: string
           status?: Database["public"]["Enums"]["status_plano"]
         }
         Update: {
@@ -199,9 +203,11 @@ export type Database = {
           criado_em?: string | null
           data_prova?: string
           disciplina?: string
+          erro_mensagem?: string | null
           filho_id?: string
           id?: string
           observacoes?: string | null
+          prompt_version?: string
           status?: Database["public"]["Enums"]["status_plano"]
         }
         Relationships: [

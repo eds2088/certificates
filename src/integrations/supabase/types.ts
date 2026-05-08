@@ -177,10 +177,14 @@ export type Database = {
           criado_em: string | null
           data_prova: string
           disciplina: string
+          erro_codigo: string | null
           erro_mensagem: string | null
           filho_id: string
           id: string
+          imagens_count: number | null
+          latency_ms: number | null
           observacoes: string | null
+          payload_kb: number | null
           prompt_version: string
           status: Database["public"]["Enums"]["status_plano"]
         }
@@ -190,10 +194,14 @@ export type Database = {
           criado_em?: string | null
           data_prova: string
           disciplina: string
+          erro_codigo?: string | null
           erro_mensagem?: string | null
           filho_id: string
           id?: string
+          imagens_count?: number | null
+          latency_ms?: number | null
           observacoes?: string | null
+          payload_kb?: number | null
           prompt_version?: string
           status?: Database["public"]["Enums"]["status_plano"]
         }
@@ -203,10 +211,14 @@ export type Database = {
           criado_em?: string | null
           data_prova?: string
           disciplina?: string
+          erro_codigo?: string | null
           erro_mensagem?: string | null
           filho_id?: string
           id?: string
+          imagens_count?: number | null
+          latency_ms?: number | null
           observacoes?: string | null
+          payload_kb?: number | null
           prompt_version?: string
           status?: Database["public"]["Enums"]["status_plano"]
         }

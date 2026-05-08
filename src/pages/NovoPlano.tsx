@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Loader2, Camera, X, BookOpen } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,9 @@ const DISCIPLINAS = [
   "Matemática", "Português", "Ciências", "História",
   "Geografia", "Inglês", "Artes", "Outra",
 ];
+
+const MAX_FILES = 5;
+const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // 25 MB
 
 export default function NovoPlano() {
   const nav = useNavigate();
@@ -47,8 +51,13 @@ export default function NovoPlano() {
   function handleFiles(e: ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files) return;
-    const next = [...fotos, ...Array.from(files)].slice(0, 6);
-    setFotos(next);
+    const incoming = Array.from(files);
+    const combined = [...fotos, ...incoming];
+    if (combined.length > MAX_FILES) {
+      toast("Você pode enviar até 5 fotos por plano — escolha as mais importantes.");
+    }
+    setFotos(combined.slice(0, MAX_FILES));
+    e.target.value = "";
   }
 
   function removeFoto(idx: number) {
@@ -57,9 +66,13 @@ export default function NovoPlano() {
 
   function canAdvance(): boolean {
     if (step === 0) return Boolean(filhoId && disciplina && dataProva);
-    if (step === 1) return fotos.length > 0;
+    if (step === 1) return fotos.length > 0 && totalBytes <= MAX_TOTAL_BYTES;
     return true;
   }
+
+  const totalBytes = fotos.reduce((s, f) => s + f.size, 0);
+  const totalMb = totalBytes / (1024 * 1024);
+  const overLimit = totalBytes > MAX_TOTAL_BYTES;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -73,6 +86,9 @@ export default function NovoPlano() {
     }
 
     try {
+      if (overLimit) {
+        throw new Error("As imagens estão muito pesadas. Tire fotos com qualidade menor ou reduza a quantidade.");
+      }
       // 1. Insert plano with status "gerando"
       const { data: plano, error: e1 } = await supabase
         .from("planos")
@@ -118,7 +134,8 @@ export default function NovoPlano() {
 
       nav({ to: "/plano/$id", params: { id: plano.id } });
     } catch (err) {
-      setError("Não conseguimos gerar seu plano agora. Verifique se as fotos estão legíveis e tente de novo.");
+      const msg = err instanceof Error ? err.message : "Não conseguimos gerar seu plano agora. Verifique se as fotos estão legíveis e tente de novo.";
+      setError(msg);
       setLoading(false);
     }
   }
@@ -206,7 +223,7 @@ export default function NovoPlano() {
             <>
               <h1 className="font-display text-2xl font-bold">Foto do material</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Roteiro de estudo, apostila ou caderno. Quanto mais legível, melhor o plano.
+                Envie até 5 fotos do material de estudo: roteiro, apostila, exercícios. Garanta boa luz e foto reta. Fotos muito grandes serão automaticamente otimizadas.
               </p>
 
               <label className="mt-6 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-input bg-secondary/40 py-12 transition-colors hover:border-primary/50 hover:bg-primary/5">
@@ -221,6 +238,16 @@ export default function NovoPlano() {
                   onChange={handleFiles}
                 />
               </label>
+
+              {fotos.length > 0 && (
+                <p className={cn(
+                  "mt-2 text-xs",
+                  overLimit ? "text-destructive" : "text-muted-foreground",
+                )}>
+                  {fotos.length}/{MAX_FILES} arquivos · {totalMb.toFixed(1)} MB no total
+                  {overLimit && " — acima do limite de 25 MB"}
+                </p>
+              )}
 
               {fotos.length > 0 && (
                 <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4">
@@ -278,6 +305,12 @@ export default function NovoPlano() {
                 Vou olhar o material com cuidado e montar um plano sob medida.
                 Isso costuma levar 30 a 60 segundos.
               </p>
+              {loading && (
+                <div className="mt-6 flex flex-col items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="animate-spin text-primary" size={24} />
+                  <p>Lendo as fotos e montando o plano… isso pode levar até 1 minuto.</p>
+                </div>
+              )}
             </div>
           )}
 

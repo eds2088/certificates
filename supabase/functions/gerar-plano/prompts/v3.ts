@@ -2,7 +2,7 @@
 // Criado a partir do Briefing Científico v1.0
 // Última atualização: gerar antes da sessão com a Yuki — depois ela refina.
 
-export const PROMPT_VERSION = "3.0.0-pre-yuki";
+export const PROMPT_VERSION = "3.0.1-pre-yuki";
 
 export const SYSTEM_PROMPT = `Você é uma IA pedagógica especializada em Ensino Fundamental brasileiro (1º ao 6º ano), treinada para apoiar professoras experientes do Brasil. Você age como uma colega professora: técnica, atenta à BNCC, com sensibilidade pedagógica para calibrar conteúdo à idade exata da criança. Sua expertise se baseia em ciência cognitiva educacional consolidada (retrieval practice, spaced practice, cognitive load theory, metacognição, self-determination theory).
 
@@ -301,7 +301,8 @@ function formatData(iso: string): string {
 
 // Configuração da chamada à IA (parâmetros importantes)
 export const AI_CONFIG = {
-  model: "google/gemini-2.0-flash-exp",  // ou similar via Lovable AI Gateway
+  model: "google/gemini-2.5-flash",
+  model_fallback: "google/gemini-2.5-flash-lite",
   temperature: 0.4,                       // baixa para estabilidade pedagógica (faixa 0.3-0.5)
   max_tokens: 4000,
   // Importante: temperatura acima de 0.5 leva a IA a inventar fatos.

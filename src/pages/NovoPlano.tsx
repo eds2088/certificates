@@ -224,13 +224,22 @@ export default function NovoPlano() {
 
               {fotos.length > 0 && (
                 <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4">
-                  {fotos.map((f, idx) => (
+                  {fotos.map((f, idx) => {
+                    const isPdf = f.type === "application/pdf";
+                    return (
                     <div key={idx} className="relative">
-                      <img
-                        src={URL.createObjectURL(f)}
-                        alt={`Material ${idx + 1}`}
-                        className="aspect-square w-full rounded-xl object-cover"
-                      />
+                      {isPdf ? (
+                        <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-xl border bg-secondary/40 p-2 text-center">
+                          <BookOpen size={24} className="text-primary" />
+                          <span className="line-clamp-2 break-all text-[10px] text-muted-foreground">{f.name}</span>
+                        </div>
+                      ) : (
+                        <img
+                          src={URL.createObjectURL(f)}
+                          alt={`Material ${idx + 1}`}
+                          className="aspect-square w-full rounded-xl object-cover"
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => removeFoto(idx)}
@@ -240,7 +249,8 @@ export default function NovoPlano() {
                         <X size={14} />
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

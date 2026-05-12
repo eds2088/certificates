@@ -4,7 +4,7 @@ const Route = getRouteApi("/_app/plano/$id");
 import * as Tabs from "@radix-ui/react-tabs";
 import {
   ArrowLeft, Loader2, BookOpen, Brain, FileText, Calendar,
-  CheckCircle2, Circle, AlertCircle,
+  CheckCircle2, Circle, AlertCircle, Shuffle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +14,92 @@ import { MascotJu } from "@/components/MascotJu";
 import { supabase } from "@/integrations/supabase/client";
 import { diasAte } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import type { Plano } from "@/types";
+import type { Plano, Exercicio, ExercicioDificuldade, ExercicioTipo } from "@/types";
+
+const TIPO_LABEL: Record<ExercicioTipo, string> = {
+  modelo: "Modelo",
+  guiado: "Guiado",
+  livre: "Livre",
+};
+
+const TIPO_CLASS: Record<ExercicioTipo, string> = {
+  modelo: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  guiado: "bg-amber-100 text-amber-800 border-amber-200",
+  livre: "bg-violet-100 text-violet-800 border-violet-200",
+};
+
+const DIFICULDADE_NIVEL: Record<ExercicioDificuldade, number> = {
+  muito_facil: 1,
+  facil: 2,
+  medio: 3,
+  dificil: 4,
+  muito_dificil: 5,
+};
+
+function ExercicioCard({ ex, idx }: { ex: Exercicio; idx: number }) {
+  const nivel = DIFICULDADE_NIVEL[ex.dificuldade] ?? 3;
+  const isModelo = ex.tipo === "modelo";
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <p className="font-display font-semibold">Questão {idx + 1}</p>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            {ex.tipo && (
+              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", TIPO_CLASS[ex.tipo])}>
+                {TIPO_LABEL[ex.tipo]}
+              </span>
+            )}
+            <span
+              className="flex items-center gap-0.5"
+              title={`Dificuldade: ${ex.dificuldade}`}
+              aria-label={`Dificuldade: ${ex.dificuldade}`}
+            >
+              {Array.from({ length: 5 }).map((_, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    i < nivel ? "bg-primary" : "bg-muted",
+                  )}
+                />
+              ))}
+            </span>
+            {ex.interleavado && (
+              <Badge variant="accent" className="gap-1 text-[10px]">
+                <Shuffle size={10} /> Mistura tópicos!
+              </Badge>
+            )}
+          </div>
+        </div>
+        <p className={cn(
+          "mt-2 rounded-lg p-3 text-sm leading-relaxed",
+          isModelo ? "bg-[hsl(var(--ju-soft))] border border-[hsl(var(--ju-soft))]" : "bg-transparent",
+        )}>
+          {ex.enunciado}
+        </p>
+        {ex.alternativas && ex.alternativas.length > 0 && (
+          <ul className="mt-3 space-y-1.5 text-sm">
+            {ex.alternativas.map((alt, i) => (
+              <li key={i} className="rounded-lg border bg-secondary/40 px-3 py-2">
+                {String.fromCharCode(97 + i)}) {alt}
+              </li>
+            ))}
+          </ul>
+        )}
+        <details className="group mt-3">
+          <summary className="cursor-pointer text-sm font-medium text-primary">
+            Ver gabarito
+          </summary>
+          <div className="mt-2 rounded-lg border bg-[hsl(var(--ju-soft))] p-3 text-sm">
+            <p className="font-semibold">Resposta: {ex.resposta_correta}</p>
+            {ex.explicacao && <p className="mt-1 text-muted-foreground">{ex.explicacao}</p>}
+          </div>
+        </details>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function PlanoView() {
   const { id } = Route.useParams();
@@ -239,33 +324,46 @@ export default function PlanoView() {
         </Tabs.Content>
 
         {/* Exercícios */}
-        <Tabs.Content value="exercicios" className="mt-5 space-y-4">
-          {conteudo?.exercicios.map((ex, idx) => (
-            <Card key={ex.id}>
-              <CardContent className="p-5">
-                <p className="font-display font-semibold">Questão {idx + 1}</p>
-                <p className="mt-2">{ex.enunciado}</p>
-                {ex.alternativas && (
-                  <ul className="mt-3 space-y-1.5 text-sm">
-                    {ex.alternativas.map((alt, i) => (
-                      <li key={i} className="rounded-lg border bg-secondary/40 px-3 py-2">
-                        {String.fromCharCode(97 + i)}) {alt}
-                      </li>
-                    ))}
-                  </ul>
+        <Tabs.Content value="exercicios" className="mt-5 space-y-6">
+          {(() => {
+            const todos = conteudo?.exercicios ?? [];
+            const mc = todos.filter((e) => e.formato !== "dissertativo");
+            const diss = todos.filter((e) => e.formato === "dissertativo");
+            return (
+              <>
+                {mc.length > 0 && (
+                  <section className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100">
+                        Múltipla escolha
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{mc.length} {mc.length === 1 ? "questão" : "questões"}</span>
+                    </div>
+                    <div className="space-y-4">
+                      {mc.map((ex, idx) => (
+                        <ExercicioCard key={ex.id} ex={ex as Exercicio} idx={idx} />
+                      ))}
+                    </div>
+                  </section>
                 )}
-                <details className="group mt-3">
-                  <summary className="cursor-pointer text-sm font-medium text-primary">
-                    Ver gabarito
-                  </summary>
-                  <div className="mt-2 rounded-lg border bg-[hsl(var(--ju-soft))] p-3 text-sm">
-                    <p className="font-semibold">Resposta: {ex.resposta_correta}</p>
-                    {ex.explicacao && <p className="mt-1 text-muted-foreground">{ex.explicacao}</p>}
-                  </div>
-                </details>
-              </CardContent>
-            </Card>
-          ))}
+                {diss.length > 0 && (
+                  <section className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-orange-100 text-orange-800 border-orange-200 hover:bg-orange-100">
+                        Responda com suas palavras
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">{diss.length} {diss.length === 1 ? "questão" : "questões"}</span>
+                    </div>
+                    <div className="space-y-4">
+                      {diss.map((ex, idx) => (
+                        <ExercicioCard key={ex.id} ex={ex as Exercicio} idx={mc.length + idx} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            );
+          })()}
         </Tabs.Content>
       </Tabs.Root>
     </div>

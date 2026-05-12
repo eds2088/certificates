@@ -70,11 +70,20 @@ export interface Flashcard {
   verso: string;
 }
 
+export type ExercicioTipo = "modelo" | "guiado" | "livre";
+export type ExercicioFormato = "multipla_escolha" | "dissertativo";
+export type ExercicioDificuldade =
+  | "muito_facil" | "facil" | "medio" | "dificil" | "muito_dificil";
+
 export interface Exercicio {
   id: string;
   enunciado: string;
-  alternativas?: string[];
+  alternativas: string[] | null;
   resposta_correta: string;
-  explicacao?: string;
-  tipo?: "modelo" | "guiado" | "livre";
+  explicacao: string;
+  tipo: ExercicioTipo;
+  formato: ExercicioFormato;
+  formato_papel_compativel: boolean;
+  dificuldade: ExercicioDificuldade;
+  interleavado: boolean;
 }

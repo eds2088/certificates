@@ -138,6 +138,39 @@ export type Database = {
           },
         ]
       }
+      ilustracoes: {
+        Row: {
+          anos_aplicaveis: string[]
+          arquivo_url: string
+          created_at: string
+          descricao: string
+          disciplinas: string[]
+          estilo: string | null
+          id: string
+          tags: string[]
+        }
+        Insert: {
+          anos_aplicaveis?: string[]
+          arquivo_url: string
+          created_at?: string
+          descricao: string
+          disciplinas?: string[]
+          estilo?: string | null
+          id: string
+          tags?: string[]
+        }
+        Update: {
+          anos_aplicaveis?: string[]
+          arquivo_url?: string
+          created_at?: string
+          descricao?: string
+          disciplinas?: string[]
+          estilo?: string | null
+          id?: string
+          tags?: string[]
+        }
+        Relationships: []
+      }
       materiais: {
         Row: {
           criado_em: string | null

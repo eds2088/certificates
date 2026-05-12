@@ -36,7 +36,34 @@ function mimeFromPath(path: string, fallback = "image/jpeg"): string {
   return fallback;
 }
 
-function validatePlano(p: unknown): asserts p is Record<string, unknown> {
+type FaixaIdade = "1-2" | "3-4" | "5-6";
+
+const QUANTIDADES_ESPERADAS: Record<FaixaIdade, {
+  flashcards: number; exercicios_total: number; exercicios_mc: number;
+  exercicios_diss: number; duracao_min: number;
+}> = {
+  "1-2": { flashcards: 8, exercicios_total: 5, exercicios_mc: 5, exercicios_diss: 0, duracao_min: 15 },
+  "3-4": { flashcards: 10, exercicios_total: 7, exercicios_mc: 5, exercicios_diss: 2, duracao_min: 20 },
+  "5-6": { flashcards: 12, exercicios_total: 8, exercicios_mc: 5, exercicios_diss: 3, duracao_min: 30 },
+};
+
+function faixaFromAno(ano: string): FaixaIdade | null {
+  if (ano === "1_EF" || ano === "2_EF") return "1-2";
+  if (ano === "3_EF" || ano === "4_EF") return "3-4";
+  if (ano === "5_EF" || ano === "6_EF") return "5-6";
+  return null;
+}
+
+class QuantidadesInvalidasError extends Error {
+  detalhes: Record<string, unknown>;
+  constructor(detalhes: Record<string, unknown>) {
+    super("Tive uma dificuldade técnica ao montar este plano. Pode tentar novamente?");
+    this.name = "QuantidadesInvalidasError";
+    this.detalhes = detalhes;
+  }
+}
+
+function validatePlano(p: unknown, faixa: FaixaIdade | null): asserts p is Record<string, unknown> {
   if (!p || typeof p !== "object") throw new Error("conteudo invalido: nao e objeto");
   const o = p as Record<string, unknown>;
   // Erros fatais: estrutura/tipos/vazio
@@ -47,15 +74,46 @@ function validatePlano(p: unknown): asserts p is Record<string, unknown> {
   if (!Array.isArray(o.flashcards) || o.flashcards.length < 1) throw new Error("flashcards ausentes ou invalidos");
   if (!Array.isArray(o.exercicios) || o.exercicios.length < 1) throw new Error("exercicios ausentes ou invalidos");
 
-  // Warnings: quantidades fora do range ideal — aceita mesmo assim
-  const t = (o.topicos as unknown[]).length;
-  if (t < 2 || t > 6) console.warn("[gerar-plano] topicos fora do range ideal", { count: t, expected: "2-6" });
-  const s = (o.sessoes as unknown[]).length;
-  if (s < 2 || s > 8) console.warn("[gerar-plano] sessoes fora do range ideal", { count: s, expected: "3-6" });
-  const f = (o.flashcards as unknown[]).length;
-  if (f < 6 || f > 15) console.warn("[gerar-plano] flashcards fora do range ideal", { count: f, expected: "8-12" });
-  const e = (o.exercicios as unknown[]).length;
-  if (e < 4 || e > 12) console.warn("[gerar-plano] exercicios fora do range ideal", { count: e, expected: "4-8" });
+  if (!faixa) {
+    console.warn("[gerar-plano] faixa de idade desconhecida — pulando validacao de quantidades");
+    return;
+  }
+
+  const esperado = QUANTIDADES_ESPERADAS[faixa];
+  const flashcards = o.flashcards as unknown[];
+  const exercicios = o.exercicios as Array<Record<string, unknown>>;
+  const sessoes = o.sessoes as Array<Record<string, unknown>>;
+  const mcCount = exercicios.filter((e) => e.formato === "multipla_escolha").length;
+  const dissCount = exercicios.filter((e) => e.formato === "dissertativo").length;
+  const duracoes = sessoes.map((s) => Number(s.duracao_min));
+  const duracoesInvalidas = duracoes.filter((d) => d !== esperado.duracao_min);
+
+  const problemas: string[] = [];
+  if (flashcards.length !== esperado.flashcards)
+    problemas.push(`flashcards=${flashcards.length} (esperado ${esperado.flashcards})`);
+  if (exercicios.length !== esperado.exercicios_total)
+    problemas.push(`exercicios=${exercicios.length} (esperado ${esperado.exercicios_total})`);
+  if (mcCount !== esperado.exercicios_mc)
+    problemas.push(`MC=${mcCount} (esperado ${esperado.exercicios_mc})`);
+  if (dissCount !== esperado.exercicios_diss)
+    problemas.push(`dissertativos=${dissCount} (esperado ${esperado.exercicios_diss})`);
+  if (duracoesInvalidas.length > 0)
+    problemas.push(`duracoes_invalidas=${JSON.stringify(duracoes)} (esperado ${esperado.duracao_min} em todas)`);
+
+  if (problemas.length > 0) {
+    throw new QuantidadesInvalidasError({
+      faixa,
+      esperado,
+      recebido: {
+        flashcards: flashcards.length,
+        exercicios_total: exercicios.length,
+        exercicios_mc: mcCount,
+        exercicios_diss: dissCount,
+        duracoes,
+      },
+      problemas,
+    });
+  }
 }
 
 function withIds(plano: Record<string, unknown>) {
@@ -71,14 +129,26 @@ function withIds(plano: Record<string, unknown>) {
     frente: String(f.frente),
     verso: String(f.verso),
   }));
-  const exercicios = (plano.exercicios as any[]).map((e) => ({
-    id: e.id ?? crypto.randomUUID(),
-    enunciado: String(e.enunciado),
-    alternativas: Array.isArray(e.alternativas) ? e.alternativas.map(String) : undefined,
-    resposta_correta: String(e.resposta_correta),
-    explicacao: e.explicacao ? String(e.explicacao) : undefined,
-    tipo: e.tipo === "modelo" || e.tipo === "guiado" || e.tipo === "livre" ? e.tipo : undefined,
-  }));
+  const exercicios = (plano.exercicios as any[]).map((e) => {
+    const formato = e.formato === "dissertativo" ? "dissertativo" : "multipla_escolha";
+    return {
+      id: e.id ?? crypto.randomUUID(),
+      enunciado: String(e.enunciado),
+      alternativas: Array.isArray(e.alternativas) ? e.alternativas.map(String) : null,
+      resposta_correta: String(e.resposta_correta),
+      explicacao: e.explicacao ? String(e.explicacao) : "",
+      tipo: e.tipo === "modelo" || e.tipo === "guiado" || e.tipo === "livre" ? e.tipo : "livre",
+      formato,
+      formato_papel_compativel:
+        typeof e.formato_papel_compativel === "boolean"
+          ? e.formato_papel_compativel
+          : formato === "multipla_escolha",
+      dificuldade: ["muito_facil", "facil", "medio", "dificil", "muito_dificil"].includes(e.dificuldade)
+        ? e.dificuldade
+        : "medio",
+      interleavado: e.interleavado === true,
+    };
+  });
   return {
     resumo: String(plano.resumo),
     topicos: (plano.topicos as any[]).map(String),
@@ -279,7 +349,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    validatePlano(parsed);
+    const faixa = faixaFromAno(filho.ano_escolar);
+    validatePlano(parsed, faixa);
     const conteudo = withIds(parsed);
 
     // 6. Atualizar plano
@@ -307,15 +378,26 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
+    const isQty = err instanceof QuantidadesInvalidasError;
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[gerar-plano] erro", msg);
+    const codigo = isQty ? "quantidades_invalidas" : "erro_interno";
+    if (isQty) {
+      console.error("[gerar-plano] quantidades_invalidas", (err as QuantidadesInvalidasError).detalhes);
+    } else {
+      console.error("[gerar-plano] erro", msg);
+    }
     if (plano_id) {
       await supabase
         .from("planos")
-        .update({ status: "erro", erro_mensagem: msg, prompt_version: PROMPT_VERSION })
+        .update({
+          status: "erro",
+          erro_codigo: codigo,
+          erro_mensagem: msg,
+          prompt_version: PROMPT_VERSION,
+        })
         .eq("id", plano_id);
     }
-    return new Response(JSON.stringify({ success: false, error: msg }), {
+    return new Response(JSON.stringify({ success: false, error: msg, codigo }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

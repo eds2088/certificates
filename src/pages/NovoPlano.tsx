@@ -36,6 +36,7 @@ export default function NovoPlano() {
   const [phase, setPhase] = useState<"idle" | "comprimindo" | "enviando" | "gerando">("idle");
   const [compressedBytes, setCompressedBytes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progressoIdx, setProgressoIdx] = useState(0);
 
   const totalSteps = 3;
 
@@ -76,6 +77,27 @@ export default function NovoPlano() {
   const totalBytes = fotos.reduce((s, f) => s + f.size, 0);
   const totalMb = totalBytes / (1024 * 1024);
   const overLimit = totalBytes > MAX_TOTAL_BYTES;
+
+  const filhoSelecionado = filhos.find((f) => f.id === filhoId);
+
+  const ETAPAS_PROGRESSO = [
+    "Otimizando suas fotos…",
+    "Analisando o material com cuidado…",
+    "Preparando a aula da sessão 1…",
+    "Montando exercícios e flashcards…",
+    "Finalizando seu plano…",
+  ];
+
+  useEffect(() => {
+    if (!loading) {
+      setProgressoIdx(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setProgressoIdx((i) => Math.min(i + 1, ETAPAS_PROGRESSO.length - 1));
+    }, 11000);
+    return () => clearInterval(id);
+  }, [loading]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -320,21 +342,25 @@ export default function NovoPlano() {
               <BookOpen size={48} className="mx-auto text-primary" />
               <h1 className="mt-4 font-display text-2xl font-bold">Tudo certo!</h1>
               <p className="mt-2 text-muted-foreground">
-                Vou olhar o material com cuidado e montar um plano sob medida.
-                Isso costuma levar 30 a 60 segundos.
+                Vou olhar o material com cuidado e montar uma aula completa sob medida.
+                Isso costuma levar até 1 minuto.
               </p>
               {loading && (
-                <div className="mt-6 flex flex-col items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="animate-spin text-primary" size={24} />
-                  <p>
-                    {phase === "comprimindo" && "Otimizando fotos…"}
-                    {phase === "enviando" && "Enviando…"}
-                    {phase === "gerando" && "Gerando plano… isso pode levar até 1 minuto."}
-                    {phase === "idle" && "Preparando…"}
+                <div className="mt-6 flex flex-col items-center gap-3 text-sm">
+                  <Loader2 className="animate-spin text-primary" size={28} />
+                  <p className="font-display text-base font-semibold text-foreground">
+                    {ETAPAS_PROGRESSO[progressoIdx]}
+                  </p>
+                  <p className="max-w-sm text-xs text-muted-foreground">
+                    Estou montando uma aula completa{filhoSelecionado ? ` pra ${filhoSelecionado.nome}` : ""}. Isso leva um minutinho mas a qualidade vale a pena.
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/80">
+                    Mantenha esta tela aberta — não feche o app.
                   </p>
                   {compressedBytes !== null && phase !== "comprimindo" && (
-                    <p className="text-xs">
-                      Fotos otimizadas: {(compressedBytes / 1024 / 1024).toFixed(1)} MB (de {(totalBytes / 1024 / 1024).toFixed(1)} MB originais)
+                    <p className="text-[11px] text-muted-foreground/70">
+                      Fotos otimizadas: {(compressedBytes / 1024 / 1024).toFixed(1)} MB
+                      {" "}(de {(totalBytes / 1024 / 1024).toFixed(1)} MB)
                     </p>
                   )}
                 </div>

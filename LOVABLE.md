@@ -1,30 +1,51 @@
 # Estudito — notas do projeto
 
-## Roadmap futuro — Modo papel híbrido (v4.0 e v4.5)
+## v3.2.0-aula-completa (atual)
 
-O Estudito vai oferecer dois canais de resposta:
+Cada sessão agora tem estrutura de aula completa com 5 blocos:
 
-- Modo digital (atual): tudo no app.
-- Modo papel impresso (v4.0+): pai imprime PDF formatado da sessão,
-  criança responde no papel. Exercícios de múltipla escolha são
-  marcados pintando quadradinhos pretos. Exercícios dissertativos
-  permanecem no app.
+- Abertura metacognitiva (pergunta da Ju ativa conhecimento prévio)
+- Conteúdo de ensino estruturado (introducao + 2-4 conceitos)
+- 2 worked examples (resolução passo a passo, revelação animada)
+- Exercícios calibrados (mantido da v3.1: quantidades rígidas + ordem
+  modelo→guiado→livre + interleavado no último)
+- Fechamento metacognitivo (pergunta da Ju para auto-avaliação)
 
-### V4.0 (mês 4-6): geração de PDF da sessão
+Suporte a línguas estrangeiras com formato bilíngue: títulos
+"Idioma (português)", conceitos com termo bilíngue, flashcards
+mistos 60% PT→idioma / 40% idioma→PT, validação cruzada.
 
-- Endpoint `POST /api/gerar-pdf-sessao` recebe `sessao_id`, retorna PDF.
-- Layout A4 com cabeçalho Estudito, Ju, tópicos, worked examples,
-  exercícios de múltipla escolha com quadradinhos 8mm.
-- Flashcards impressos em grade recortável no verso ou em folha
-  separada.
+Infraestrutura SVG pronta (tabela `ilustracoes` + bucket Storage
+público `ilustracoes`), mas sem população. Por enquanto a IA sempre
+retorna `ilustracao_id: null` e o frontend cai em
+`<PlaceholderIlustracao />` (caixa cinza com `descricao_visual`
+em itálico abaixo).
 
-### V4.5 (mês 7-9): OCR de quadradinhos
+Progresso intermediário da sessão (qual seção a criança está,
+respostas opcionais de abertura/fechamento) salvo em `localStorage`
+por `plano_id+sessao_id`.
 
-- Endpoint `POST /api/processar-foto-sessao` recebe foto de folha
-  respondida, retorna alternativas marcadas + correção contra
-  gabarito interno.
-- IA reconhece quadradinhos pintados (não letra cursiva — risco
-  técnico).
-- Painel parental atualiza automaticamente como se respondido no app.
+## Roadmap próximo
+
+### v3.3 (mês 1-2): popular biblioteca de ilustrações
+
+- Decidir caminho (gratuito + IA, ilustrador profissional, ou híbrido)
+- Popular tabela `ilustracoes` com ~150-300 SVGs iniciais
+- IA passa a fazer tool_call para buscar SVGs por tags
+- Substituir placeholder cinza por SVG real quando
+  `ilustracao_id != null`
+
+### v4.0 (mês 4-6): modo papel
+
+- PDF impresso de cada sessão com layout pedagógico
+- Quadradinhos 8mm para múltipla escolha
+- Conteúdo de ensino + worked examples impressos
+- Dissertativos permanecem só no app
+
+### v4.5 (mês 7-9): OCR
+
+- Pai fotografa folha respondida
+- IA lê marcações de quadradinhos
+- Painel parental atualiza automaticamente
 
 NÃO IMPLEMENTAR AGORA. Apenas anotado para visibilidade.

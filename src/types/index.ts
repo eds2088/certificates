@@ -58,10 +58,39 @@ export interface PlanoConteudo {
 
 export interface SessaoEstudo {
   id: string;
-  titulo: string;
+  titulo: string;                        // bilíngue p/ línguas estrangeiras
   duracao_min: number;
   objetivos: string[];
+
+  // Aula completa (v3.2)
+  abertura_metacognitiva: string;
+  conteudo_ensino: ConteudoEnsino;
+  worked_examples: WorkedExample[];
+  fechamento_metacognitivo: string;
+
   concluida: boolean;
+}
+
+export interface ConteudoEnsino {
+  introducao: string;
+  conceitos: Conceito[];
+}
+
+export interface Conceito {
+  nome: string;
+  explicacao: string;
+  exemplo: string;
+  descricao_visual: string;
+  ilustracao_id: string | null;
+}
+
+export interface WorkedExample {
+  id: string;
+  enunciado: string;
+  resolucao_passo_a_passo: string[];
+  resposta_final: string;
+  descricao_visual: string;
+  ilustracao_id: string | null;
 }
 
 export interface Flashcard {
@@ -86,4 +115,6 @@ export interface Exercicio {
   formato_papel_compativel: boolean;
   dificuldade: ExercicioDificuldade;
   interleavado: boolean;
+  descricao_visual: string;
+  ilustracao_id: string | null;
 }

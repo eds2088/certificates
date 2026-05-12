@@ -63,6 +63,124 @@ class QuantidadesInvalidasError extends Error {
   }
 }
 
+class EstruturaSessaoInvalidaError extends Error {
+  codigo: string;
+  detalhes: Record<string, unknown>;
+  constructor(codigo: string, detalhes: Record<string, unknown>) {
+    super("Tive uma dificuldade técnica ao montar este plano. Pode tentar novamente? Se persistir, mude a foto do material.");
+    this.name = "EstruturaSessaoInvalidaError";
+    this.codigo = codigo;
+    this.detalhes = detalhes;
+  }
+}
+
+const LINGUAS_ESTRANGEIRAS = [
+  "ingles", "inglês", "english",
+  "espanhol", "spanish", "español",
+  "frances", "francês", "french",
+  "alemao", "alemão", "german", "deutsch",
+  "italiano", "italian",
+];
+
+function isLinguaEstrangeira(disciplina: string): boolean {
+  const d = disciplina.toLowerCase();
+  return LINGUAS_ESTRANGEIRAS.some((l) => d.includes(l));
+}
+
+function temFormatoBilingue(s: string): boolean {
+  // termo + (tradução entre parênteses)
+  return /\([^)]{2,}\)/.test(s);
+}
+
+function validateSessoesAula(
+  sessoes: Array<Record<string, unknown>>,
+  exercicios: Array<Record<string, unknown>>,
+  disciplina: string,
+) {
+  for (let i = 0; i < sessoes.length; i++) {
+    const s = sessoes[i];
+    const ref = `sessao[${i}]`;
+
+    const abertura = String(s.abertura_metacognitiva ?? "");
+    if (abertura.trim().length < 30) {
+      throw new EstruturaSessaoInvalidaError("abertura_metacognitiva_invalida", { ref, len: abertura.trim().length });
+    }
+
+    const ce = s.conteudo_ensino as Record<string, unknown> | undefined;
+    if (!ce || typeof ce !== "object") {
+      throw new EstruturaSessaoInvalidaError("conteudo_ensino_invalido", { ref, motivo: "ausente" });
+    }
+    const intro = String(ce.introducao ?? "");
+    if (intro.trim().length < 30) {
+      throw new EstruturaSessaoInvalidaError("conteudo_ensino_invalido", { ref, motivo: "introducao_curta", len: intro.trim().length });
+    }
+    const conceitos = ce.conceitos as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(conceitos) || conceitos.length < 2 || conceitos.length > 4) {
+      throw new EstruturaSessaoInvalidaError("conteudo_ensino_invalido", { ref, motivo: "conceitos_fora_de_2_a_4", count: conceitos?.length });
+    }
+    for (let c = 0; c < conceitos.length; c++) {
+      const co = conceitos[c];
+      const cref = `${ref}.conceito[${c}]`;
+      for (const k of ["nome", "explicacao", "exemplo", "descricao_visual"] as const) {
+        const v = String((co as any)[k] ?? "").trim();
+        if (!v) throw new EstruturaSessaoInvalidaError("conteudo_ensino_invalido", { ref: cref, motivo: `${k}_vazio` });
+      }
+      if (String(co.descricao_visual).trim().length < 20) {
+        throw new EstruturaSessaoInvalidaError("descricao_visual_ausente", { ref: cref });
+      }
+    }
+
+    const wes = s.worked_examples as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(wes) || wes.length !== 2) {
+      throw new EstruturaSessaoInvalidaError("worked_examples_invalidos", { ref, motivo: "quantidade", count: wes?.length });
+    }
+    for (let w = 0; w < wes.length; w++) {
+      const we = wes[w];
+      const wref = `${ref}.we[${w}]`;
+      const passos = we.resolucao_passo_a_passo as unknown[] | undefined;
+      if (!Array.isArray(passos) || passos.length < 2 || passos.length > 4) {
+        throw new EstruturaSessaoInvalidaError("worked_examples_invalidos", { ref: wref, motivo: "passos_fora_de_2_a_4", count: passos?.length });
+      }
+      if (passos.some((p) => typeof p !== "string" || !String(p).trim())) {
+        throw new EstruturaSessaoInvalidaError("worked_examples_invalidos", { ref: wref, motivo: "passo_vazio" });
+      }
+      if (!String(we.enunciado ?? "").trim() || !String(we.resposta_final ?? "").trim()) {
+        throw new EstruturaSessaoInvalidaError("worked_examples_invalidos", { ref: wref, motivo: "campos_basicos_vazios" });
+      }
+      if (String(we.descricao_visual ?? "").trim().length < 20) {
+        throw new EstruturaSessaoInvalidaError("descricao_visual_ausente", { ref: wref });
+      }
+    }
+
+    const fech = String(s.fechamento_metacognitivo ?? "");
+    if (fech.trim().length < 30) {
+      throw new EstruturaSessaoInvalidaError("fechamento_metacognitivo_invalido", { ref, len: fech.trim().length });
+    }
+  }
+
+  for (let i = 0; i < exercicios.length; i++) {
+    const ex = exercicios[i];
+    const dv = String(ex.descricao_visual ?? "").trim();
+    if (dv.length < 20) {
+      throw new EstruturaSessaoInvalidaError("descricao_visual_ausente", { ref: `exercicio[${i}]`, len: dv.length });
+    }
+  }
+
+  if (isLinguaEstrangeira(disciplina)) {
+    let achouBilingue = false;
+    outer: for (const s of sessoes) {
+      const conceitos = (s.conteudo_ensino as any)?.conceitos as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(conceitos)) continue;
+      for (const co of conceitos) {
+        if (temFormatoBilingue(String(co.nome ?? ""))) { achouBilingue = true; break outer; }
+      }
+    }
+    if (!achouBilingue) {
+      throw new EstruturaSessaoInvalidaError("linguagem_estrangeira_sem_bilingue", { disciplina });
+    }
+  }
+}
+
 function validatePlano(p: unknown, faixa: FaixaIdade | null): asserts p is Record<string, unknown> {
   if (!p || typeof p !== "object") throw new Error("conteudo invalido: nao e objeto");
   const o = p as Record<string, unknown>;
@@ -122,6 +240,32 @@ function withIds(plano: Record<string, unknown>) {
     titulo: String(s.titulo),
     duracao_min: Number(s.duracao_min),
     objetivos: Array.isArray(s.objetivos) ? s.objetivos.map(String) : [],
+    abertura_metacognitiva: String(s.abertura_metacognitiva ?? ""),
+    conteudo_ensino: {
+      introducao: String(s.conteudo_ensino?.introducao ?? ""),
+      conceitos: Array.isArray(s.conteudo_ensino?.conceitos)
+        ? s.conteudo_ensino.conceitos.map((c: any) => ({
+            nome: String(c.nome ?? ""),
+            explicacao: String(c.explicacao ?? ""),
+            exemplo: String(c.exemplo ?? ""),
+            descricao_visual: String(c.descricao_visual ?? ""),
+            ilustracao_id: null,
+          }))
+        : [],
+    },
+    worked_examples: Array.isArray(s.worked_examples)
+      ? s.worked_examples.map((w: any, i: number) => ({
+          id: w.id ?? `we${i + 1}`,
+          enunciado: String(w.enunciado ?? ""),
+          resolucao_passo_a_passo: Array.isArray(w.resolucao_passo_a_passo)
+            ? w.resolucao_passo_a_passo.map(String)
+            : [],
+          resposta_final: String(w.resposta_final ?? ""),
+          descricao_visual: String(w.descricao_visual ?? ""),
+          ilustracao_id: null,
+        }))
+      : [],
+    fechamento_metacognitivo: String(s.fechamento_metacognitivo ?? ""),
     concluida: false,
   }));
   const flashcards = (plano.flashcards as any[]).map((f) => ({
@@ -147,6 +291,8 @@ function withIds(plano: Record<string, unknown>) {
         ? e.dificuldade
         : "medio",
       interleavado: e.interleavado === true,
+      descricao_visual: String(e.descricao_visual ?? ""),
+      ilustracao_id: null,
     };
   });
   return {
@@ -351,6 +497,11 @@ Deno.serve(async (req) => {
 
     const faixa = faixaFromAno(filho.ano_escolar);
     validatePlano(parsed, faixa);
+    validateSessoesAula(
+      parsed.sessoes as Array<Record<string, unknown>>,
+      parsed.exercicios as Array<Record<string, unknown>>,
+      plano.disciplina,
+    );
     const conteudo = withIds(parsed);
 
     // 6. Atualizar plano
@@ -379,10 +530,20 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     const isQty = err instanceof QuantidadesInvalidasError;
+    const isEstrutura = err instanceof EstruturaSessaoInvalidaError;
     const msg = err instanceof Error ? err.message : String(err);
-    const codigo = isQty ? "quantidades_invalidas" : "erro_interno";
+    const codigo = isEstrutura
+      ? (err as EstruturaSessaoInvalidaError).codigo
+      : isQty
+      ? "quantidades_invalidas"
+      : "erro_interno";
     if (isQty) {
       console.error("[gerar-plano] quantidades_invalidas", (err as QuantidadesInvalidasError).detalhes);
+    } else if (isEstrutura) {
+      console.error("[gerar-plano] estrutura_sessao_invalida", {
+        codigo: (err as EstruturaSessaoInvalidaError).codigo,
+        detalhes: (err as EstruturaSessaoInvalidaError).detalhes,
+      });
     } else {
       console.error("[gerar-plano] erro", msg);
     }

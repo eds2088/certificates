@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ChangeEvent } from "react";
-import { useNavigate } from "@tanstack/react-router";
-import { ChevronLeft, ChevronRight, Loader2, Camera, X, BookOpen } from "lucide-react";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import { ChevronLeft, ChevronRight, Loader2, Camera, X, BookOpen, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ const MAX_TOTAL_BYTES = 25 * 1024 * 1024; // 25 MB
 export default function NovoPlano() {
   const nav = useNavigate();
   const { profile } = useAuth();
+  const { observacoes_pre } = useSearch({ from: "/_app/novo-plano" });
   const [step, setStep] = useState(0);
   const [filhos, setFilhos] = useState<Filho[]>([]);
 
@@ -31,7 +32,8 @@ export default function NovoPlano() {
   const [disciplina, setDisciplina] = useState("");
   const [dataProva, setDataProva] = useState("");
   const [fotos, setFotos] = useState<File[]>([]);
-  const [observacoes, setObservacoes] = useState("");
+  const [observacoes, setObservacoes] = useState(observacoes_pre ?? "");
+  const [sugestaoAtiva, setSugestaoAtiva] = useState(Boolean(observacoes_pre));
   const [loading, setLoading] = useState(false);
   const [phase, setPhase] = useState<"idle" | "comprimindo" | "enviando" | "gerando">("idle");
   const [compressedBytes, setCompressedBytes] = useState<number | null>(null);
@@ -329,10 +331,22 @@ export default function NovoPlano() {
                   id="obs"
                   rows={3}
                   value={observacoes}
-                  onChange={(e) => setObservacoes(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setObservacoes(v);
+                    if (sugestaoAtiva && v !== (observacoes_pre ?? "")) {
+                      setSugestaoAtiva(false);
+                    }
+                  }}
                   placeholder="Ex.: foque em frações; ele tem dificuldade com problemas com texto."
                   className="mt-1.5 flex w-full rounded-xl border border-input bg-background px-4 py-2.5 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
+                {sugestaoAtiva && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Sparkles size={12} className="text-primary" aria-hidden />
+                    Sugestão da Ju aplicada — você pode editar livremente.
+                  </p>
+                )}
               </div>
             </>
           )}

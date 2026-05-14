@@ -171,6 +171,56 @@ export type Database = {
         }
         Relationships: []
       }
+      insights_filho: {
+        Row: {
+          baseado_em_planos: string[]
+          criado_em: string
+          filho_id: string
+          gerado_em: string
+          id: string
+          pontos_atencao: Json
+          pontos_fortes: Json
+          prompt_version: string
+          resumo_geral: string
+          sugestao_proximo_plano: Json | null
+          topicos_revisao: string[]
+        }
+        Insert: {
+          baseado_em_planos?: string[]
+          criado_em?: string
+          filho_id: string
+          gerado_em?: string
+          id?: string
+          pontos_atencao?: Json
+          pontos_fortes?: Json
+          prompt_version?: string
+          resumo_geral?: string
+          sugestao_proximo_plano?: Json | null
+          topicos_revisao?: string[]
+        }
+        Update: {
+          baseado_em_planos?: string[]
+          criado_em?: string
+          filho_id?: string
+          gerado_em?: string
+          id?: string
+          pontos_atencao?: Json
+          pontos_fortes?: Json
+          prompt_version?: string
+          resumo_geral?: string
+          sugestao_proximo_plano?: Json | null
+          topicos_revisao?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insights_filho_filho_id_fkey"
+            columns: ["filho_id"]
+            isOneToOne: false
+            referencedRelation: "filhos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       materiais: {
         Row: {
           criado_em: string | null
@@ -205,10 +255,12 @@ export type Database = {
       }
       planos: {
         Row: {
+          archived_at: string | null
           atualizado_em: string | null
           conteudo_json: Json | null
           criado_em: string | null
           data_prova: string
+          deleted_at: string | null
           disciplina: string
           erro_codigo: string | null
           erro_mensagem: string | null
@@ -225,10 +277,12 @@ export type Database = {
           status: Database["public"]["Enums"]["status_plano"]
         }
         Insert: {
+          archived_at?: string | null
           atualizado_em?: string | null
           conteudo_json?: Json | null
           criado_em?: string | null
           data_prova: string
+          deleted_at?: string | null
           disciplina: string
           erro_codigo?: string | null
           erro_mensagem?: string | null
@@ -245,10 +299,12 @@ export type Database = {
           status?: Database["public"]["Enums"]["status_plano"]
         }
         Update: {
+          archived_at?: string | null
           atualizado_em?: string | null
           conteudo_json?: Json | null
           criado_em?: string | null
           data_prova?: string
+          deleted_at?: string | null
           disciplina?: string
           erro_codigo?: string | null
           erro_mensagem?: string | null

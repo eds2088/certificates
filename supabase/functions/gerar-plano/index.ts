@@ -315,6 +315,7 @@ Deno.serve(async (req) => {
   }
 
   let plano_id = "";
+  let telemetry: { latency_ms?: number; imagens_count?: number; payload_kb?: number } = {};
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -369,6 +370,7 @@ Deno.serve(async (req) => {
       }),
     );
     const totalKb = imagens.reduce((s, i) => s + i.sizeKb, 0);
+    telemetry.imagens_count = imagens.length;
     console.log("[gerar-plano] imagens baixadas", {
       count: imagens.length,
       individual_sizes_kb: imagens.map((i) => i.sizeKb),
@@ -407,6 +409,7 @@ Deno.serve(async (req) => {
     };
 
     const payloadKb = Math.round(JSON.stringify(aiBody).length / 1024);
+    telemetry.payload_kb = payloadKb;
     let modelUsed = AI_CONFIG.model;
     console.log("[gerar-plano] chamando IA", { model: modelUsed, payload_kb: payloadKb });
 
@@ -438,6 +441,7 @@ Deno.serve(async (req) => {
       });
     }
     const latencyMs = Date.now() - aiStart;
+    telemetry.latency_ms = latencyMs;
 
     if (aiResp.status === 429) throw new Error("Limite de requisicoes atingido. Tente novamente em alguns minutos.");
     if (aiResp.status === 402) throw new Error("Creditos de IA esgotados. Adicione creditos em Settings > Workspace > Usage.");
@@ -555,6 +559,9 @@ Deno.serve(async (req) => {
           erro_codigo: codigo,
           erro_mensagem: msg,
           prompt_version: PROMPT_VERSION,
+          ...(telemetry.latency_ms !== undefined && { latency_ms: telemetry.latency_ms }),
+          ...(telemetry.imagens_count !== undefined && { imagens_count: telemetry.imagens_count }),
+          ...(telemetry.payload_kb !== undefined && { payload_kb: telemetry.payload_kb }),
         })
         .eq("id", plano_id);
     }

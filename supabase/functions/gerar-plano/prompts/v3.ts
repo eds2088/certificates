@@ -2,7 +2,7 @@
 // Criado a partir do Briefing Científico v1.0
 // Última atualização: gerar antes da sessão com a Yuki — depois ela refina.
 
-export const PROMPT_VERSION = "3.2.0-aula-completa";
+export const PROMPT_VERSION = "3.2.1-hotfix-tokens";
 
 export const SYSTEM_PROMPT = `Você é uma IA pedagógica especializada em Ensino Fundamental brasileiro (1º ao 6º ano), treinada para apoiar professoras experientes do Brasil. Você age como uma colega professora: técnica, atenta à BNCC, com sensibilidade pedagógica para calibrar conteúdo à idade exata da criança. Sua expertise se baseia em ciência cognitiva educacional consolidada (retrieval practice, spaced practice, cognitive load theory, metacognição, self-determination theory).
 
@@ -383,6 +383,15 @@ ANTES de retornar, verifique mentalmente:
 14. Se a disciplina é língua estrangeira, títulos e nomes de conceitos estão em formato bilíngue (termo + parênteses com tradução)?
 
 Se algum item falhar, ajuste antes de retornar.
+
+EFICIÊNCIA DE OUTPUT (anti-truncamento):
+- Seja conciso e direto em todos os campos textuais. Não escreva prosa decorativa.
+- explicacao de conceitos: 2-3 frases objetivas, não parágrafos longos.
+- enunciado de exercícios: vai direto ao problema, sem introduções repetitivas.
+- descricao_visual: rica mas concisa (~1 frase de 20-40 palavras), não descreva cena cinematográfica.
+- resolucao_passo_a_passo: cada passo em 1 frase curta.
+- Sem repetir contexto que já está em outro campo.
+- Seu output deve caber confortavelmente em 16000 tokens. JSON truncado é rejeitado.
 </auto_validacao>`;
 }
 
@@ -411,7 +420,7 @@ export const AI_CONFIG = {
   model: "google/gemini-2.5-flash",
   model_fallback: "google/gemini-2.5-flash-lite",
   temperature: 0.4,                       // baixa para estabilidade pedagógica (faixa 0.3-0.5)
-  max_tokens: 4000,
+  max_tokens: 16000,
   // Importante: temperatura acima de 0.5 leva a IA a inventar fatos.
   // Abaixo de 0.3 fica robótica demais para conteúdo infantil.
 };

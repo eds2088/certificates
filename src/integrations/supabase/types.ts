@@ -269,10 +269,13 @@ export type Database = {
           flashcards_count: number | null
           id: string
           imagens_count: number | null
+          latency_first_call_ms: number | null
           latency_ms: number | null
           observacoes: string | null
           payload_kb: number | null
           prompt_version: string
+          retry_count: number | null
+          retry_falhou: boolean | null
           sessoes_count: number | null
           status: Database["public"]["Enums"]["status_plano"]
         }
@@ -291,10 +294,13 @@ export type Database = {
           flashcards_count?: number | null
           id?: string
           imagens_count?: number | null
+          latency_first_call_ms?: number | null
           latency_ms?: number | null
           observacoes?: string | null
           payload_kb?: number | null
           prompt_version?: string
+          retry_count?: number | null
+          retry_falhou?: boolean | null
           sessoes_count?: number | null
           status?: Database["public"]["Enums"]["status_plano"]
         }
@@ -313,10 +319,13 @@ export type Database = {
           flashcards_count?: number | null
           id?: string
           imagens_count?: number | null
+          latency_first_call_ms?: number | null
           latency_ms?: number | null
           observacoes?: string | null
           payload_kb?: number | null
           prompt_version?: string
+          retry_count?: number | null
+          retry_falhou?: boolean | null
           sessoes_count?: number | null
           status?: Database["public"]["Enums"]["status_plano"]
         }

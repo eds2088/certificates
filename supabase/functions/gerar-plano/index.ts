@@ -315,7 +315,14 @@ Deno.serve(async (req) => {
   }
 
   let plano_id = "";
-  let telemetry: { latency_ms?: number; imagens_count?: number; payload_kb?: number } = {};
+  let telemetry: {
+    latency_ms?: number;
+    imagens_count?: number;
+    payload_kb?: number;
+    latency_first_call_ms?: number;
+    retry_count?: number;
+    retry_falhou?: boolean;
+  } = {};
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -440,8 +447,12 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ ...aiBody, model: modelUsed }),
       });
     }
-    const latencyMs = Date.now() - aiStart;
+    const latencyFirstCallMs = Date.now() - aiStart;
+    let latencyMs = latencyFirstCallMs;
+    telemetry.latency_first_call_ms = latencyFirstCallMs;
     telemetry.latency_ms = latencyMs;
+    telemetry.retry_count = 0;
+    telemetry.retry_falhou = false;
 
     if (aiResp.status === 429) throw new Error("Limite de requisicoes atingido. Tente novamente em alguns minutos.");
     if (aiResp.status === 402) throw new Error("Creditos de IA esgotados. Adicione creditos em Settings > Workspace > Usage.");
@@ -500,12 +511,118 @@ Deno.serve(async (req) => {
     }
 
     const faixa = faixaFromAno(filho.ano_escolar);
-    validatePlano(parsed, faixa);
-    validateSessoesAula(
-      parsed.sessoes as Array<Record<string, unknown>>,
-      parsed.exercicios as Array<Record<string, unknown>>,
-      plano.disciplina,
-    );
+
+    // ----- Validação + retry corretivo (v3.2.2) -----
+    const RETRYABLE_CODES = new Set([
+      "abertura_metacognitiva_invalida",
+      "fechamento_metacognitivo_invalido",
+      "descricao_visual_ausente",
+    ]);
+    function isRetryable(err: EstruturaSessaoInvalidaError): boolean {
+      if (RETRYABLE_CODES.has(err.codigo)) return true;
+      if (err.codigo === "conteudo_ensino_invalido" && err.detalhes?.motivo === "introducao_curta") return true;
+      if (err.codigo === "worked_examples_invalidos" && err.detalhes?.motivo === "quantidade") return true;
+      return false;
+    }
+    function describeFalha(err: EstruturaSessaoInvalidaError): string {
+      const motivo = err.detalhes?.motivo ? ` (motivo: ${err.detalhes.motivo})` : "";
+      return `${err.detalhes?.ref ?? "?"}: ${err.codigo}${motivo}`;
+    }
+
+    try {
+      validatePlano(parsed, faixa);
+      validateSessoesAula(
+        parsed.sessoes as Array<Record<string, unknown>>,
+        parsed.exercicios as Array<Record<string, unknown>>,
+        plano.disciplina,
+      );
+    } catch (validateErr) {
+      if (!(validateErr instanceof EstruturaSessaoInvalidaError) || !isRetryable(validateErr)) {
+        throw validateErr;
+      }
+      const campoFaltante = describeFalha(validateErr);
+      console.log("[gerar-plano] retry_corretivo", {
+        plano_id,
+        campos_faltantes: [campoFaltante],
+        modelo: modelUsed,
+      });
+      const corrMsg = `Você gerou um plano quase completo, mas um bloco ficou vazio ou curto. Por favor, complete APENAS este campo, mantendo TODO o resto do JSON exatamente como está:
+
+- ${campoFaltante}
+
+Regras: blocos de texto pedagógico (abertura_metacognitiva, fechamento_metacognitivo, conteudo_ensino.introducao) precisam de no mínimo 30 caracteres. Cada descricao_visual precisa de no mínimo 20 caracteres. worked_examples precisa de EXATAMENTE 2 itens com 2-4 passos cada.
+
+JSON original:
+${JSON.stringify(parsed)}
+
+Retorne o JSON completo (mesmo schema) com o bloco faltante preenchido.`;
+
+      const retryStart = Date.now();
+      let retryResp: Response | null = null;
+      let retryErrorMsg = "retry_sem_resposta";
+      try {
+        retryResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: modelUsed,
+            temperature: AI_CONFIG.temperature,
+            max_tokens: AI_CONFIG.max_tokens,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: corrMsg },
+            ],
+            response_format: { type: "json_object" as const },
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+      } catch (e) {
+        retryErrorMsg = `fetch_error: ${(e as Error).message}`;
+      }
+
+      const retryLatencyMs = Date.now() - retryStart;
+      latencyMs = latencyFirstCallMs + retryLatencyMs;
+      telemetry.latency_ms = latencyMs;
+      telemetry.retry_count = 1;
+
+      let retrySucesso = false;
+      if (retryResp && retryResp.ok) {
+        try {
+          const rj = await retryResp.json();
+          const rc = rj.choices?.[0]?.message?.content;
+          if (typeof rc !== "string" || !rc.trim()) {
+            retryErrorMsg = "retry_conteudo_vazio";
+          } else {
+            const cleaned2 = rc.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+            const parsedRetry = JSON.parse(cleaned2);
+            validatePlano(parsedRetry, faixa);
+            validateSessoesAula(
+              parsedRetry.sessoes as Array<Record<string, unknown>>,
+              parsedRetry.exercicios as Array<Record<string, unknown>>,
+              plano.disciplina,
+            );
+            parsed = parsedRetry;
+            retrySucesso = true;
+          }
+        } catch (e2) {
+          retryErrorMsg = (e2 as Error).message;
+        }
+      } else if (retryResp) {
+        retryErrorMsg = `http_${retryResp.status}`;
+      }
+
+      if (!retrySucesso) {
+        telemetry.retry_falhou = true;
+        console.log("[gerar-plano] retry_falhou", {
+          plano_id,
+          motivo_primeira_falha: validateErr.codigo,
+          motivo_falha_retry: retryErrorMsg,
+          retry_latency_ms: retryLatencyMs,
+        });
+        throw validateErr; // erro do primeiro validate, mais informativo
+      }
+    }
+
     const conteudo = withIds(parsed);
 
     // 6. Atualizar plano
@@ -520,6 +637,9 @@ Deno.serve(async (req) => {
         latency_ms: latencyMs,
         imagens_count: imagens.length,
         payload_kb: payloadKb,
+        latency_first_call_ms: latencyFirstCallMs,
+        retry_count: telemetry.retry_count ?? 0,
+        retry_falhou: telemetry.retry_falhou ?? false,
         flashcards_count: conteudo.flashcards.length,
         exercicios_count: conteudo.exercicios.length,
         sessoes_count: conteudo.sessoes.length,
@@ -562,6 +682,9 @@ Deno.serve(async (req) => {
           ...(telemetry.latency_ms !== undefined && { latency_ms: telemetry.latency_ms }),
           ...(telemetry.imagens_count !== undefined && { imagens_count: telemetry.imagens_count }),
           ...(telemetry.payload_kb !== undefined && { payload_kb: telemetry.payload_kb }),
+          ...(telemetry.latency_first_call_ms !== undefined && { latency_first_call_ms: telemetry.latency_first_call_ms }),
+          ...(telemetry.retry_count !== undefined && { retry_count: telemetry.retry_count }),
+          ...(telemetry.retry_falhou !== undefined && { retry_falhou: telemetry.retry_falhou }),
         })
         .eq("id", plano_id);
     }

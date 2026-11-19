@@ -9,6 +9,9 @@ Cria, nesta pasta:
       planilha com notas inválidas, para ver as mensagens de erro
   - resumo_escudos.xlsx
       escudos esperados de cada criança nas três provas, e as faixas de cada prova
+  - tabela_notas_escudos.xlsx
+      todas as notas de 0 a N de cada prova e habilidade, com os escudos de cada uma
+      (a nota N-1 em destaque)
 
 As faixas abaixo foram escritas à mão, a partir das tabelas de conversão,
 e não usam o código do site: servem para conferir o site de forma independente.
@@ -241,8 +244,60 @@ def write_summary():
     wb.save(HERE / "resumo_escudos.xlsx")
 
 
+
+
+def write_score_table():
+    """Todas as notas de 0 a N de cada prova e habilidade, com os escudos que cada uma dá.
+    A nota N-1 (um ponto abaixo do máximo) fica em destaque."""
+    skills = [("rw", "Reading/Writing"), ("l", "Listening")]
+    highlight = PatternFill("solid", fgColor="FFF2CC")
+    wb = Workbook()
+
+    # --- Aba 1: só a nota N-1 de cada prova e habilidade
+    ws = wb.active
+    ws.title = "Nota N-1"
+    ws.append(["Prova", "Habilidade", "Nota máxima (N)", "Nota N-1", "Escudos com N-1", "Escudos com N"])
+    for exam in EXAMS:
+        for skill, label in skills:
+            n = BANDS[exam][skill][-1][1]
+            ws.append([exam, label, n, n - 1, shields_for(n - 1, exam, skill), shields_for(n, exam, skill)])
+        ws.append([exam, "Speaking (já em escudos)", 5, 4, 4, 5])
+    style_header(ws)
+    autosize(ws)
+
+    # --- Uma aba por prova: notas de 0 a N
+    for exam in EXAMS:
+        we = wb.create_sheet(f"{exam.capitalize()} 0 a N")
+        maxima = {s: BANDS[exam][s][-1][1] for s, _ in skills}
+        top = max(maxima.values())
+        we.append(["Nota"] + [f"{label} (0–{maxima[s]})" for s, label in skills] + ["Speaking (0–5)"])
+        for score in range(top, -1, -1):
+            row = [score]
+            for s, _ in skills:
+                row.append(shields_for(score, exam, s) if score <= maxima[s] else "—")
+            row.append(shields_for(score, exam, "s") if score <= 5 else "—")
+            we.append(row)
+            if any(score == m - 1 for m in maxima.values()) or score == 4:
+                for col, (s, _) in enumerate(skills, start=2):
+                    if score == maxima[s] - 1:
+                        we.cell(we.max_row, col).fill = highlight
+                if score == 4:
+                    we.cell(we.max_row, 4).fill = highlight
+        style_header(we)
+        for r in we.iter_rows(min_row=2):
+            for c in r:
+                c.alignment = Alignment(horizontal="center")
+        autosize(we, min_width=10)
+        we.freeze_panes = "A2"
+        we.append([])
+        we.append(["Em amarelo: a nota N-1 (um ponto abaixo do máximo). z = zero escudos."])
+
+    wb.save(HERE / "tabela_notas_escudos.xlsx")
+
+
 if __name__ == "__main__":
     write_inputs()
     write_errors()
     write_summary()
+    write_score_table()
     print("Planilhas geradas em", HERE)

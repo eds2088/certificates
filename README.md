@@ -90,6 +90,7 @@ A pasta [`exemplos/`](exemplos/) tem planilhas para conferir o cálculo:
 - `entrada_starters.xlsx`, `entrada_movers.xlsx`, `entrada_flyers.xlsx`: 17 crianças, cada uma com um tipo de nota (nota máxima, limites de cada faixa, zero, `z`, em branco, texto…).
 - `entrada_com_erros.xlsx`: notas inválidas, para ver as mensagens de erro.
 - `resumo_escudos.xlsx`: quantos escudos cada criança deve receber nas três provas, e as faixas de cada prova.
+- `tabela_notas_escudos.xlsx`: todas as notas de 0 a N de cada prova e habilidade, com os escudos que cada uma dá. A primeira aba mostra só a nota N−1 (um ponto abaixo do máximo).
 
 Para gerar de novo: `python3 exemplos/gerar_exemplos.py` (precisa do pacote `openpyxl`).
 

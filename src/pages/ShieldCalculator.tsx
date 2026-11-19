@@ -216,7 +216,7 @@ export default function ShieldCalculator() {
                     {type} (Reading/Writing: 0-{EXAMS[type].readingWriting}, Listening: 0-{EXAMS[type].listening}, Speaking: 0-{MAX_SHIELDS} escudos)
                   </p>
                 ))}
-                <p>Nota em branco, 0 ou z conta como zero escudos.</p>
+                <p>Se o aluno não tiver nota em uma avaliação, coloque <strong>Z</strong>, <strong>0</strong> ou deixe a célula <strong>em branco</strong>: ele fica sem escudo naquela avaliação.</p>
               </div>
             </div>
 

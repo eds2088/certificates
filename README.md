@@ -99,6 +99,8 @@ Para gerar de novo: `python3 exemplos/gerar_exemplos.py` (precisa do pacote `ope
 
 Os dados já chegam carregados se você veio da Calculadora. Também aceita uma planilha de escudos no formato antigo: coluna A com o nome e colunas B, C e D com escudos de 1 a 5, ou `0` / `z` / em branco para zero.
 
+O botão **Baixar planilha exemplo** baixa uma planilha de escudos com 5 alunos e escudos sorteados, para usar como modelo. Ela sempre traz um `z`, um `0` e uma célula em branco: se o aluno não tiver nota em uma avaliação, coloque Z, 0 ou deixe em branco, e ele fica sem escudo naquela avaliação.
+
 ### Passo 2: Visualização
 
 - **Turma, Prova e Ano:** preencha a turma antes de baixar. O ano já vem com o ano atual. Quando os dados vêm da Calculadora, a prova fica travada (os escudos já foram calculados com ela); para mudar, envie a planilha de novo na Calculadora. Com a planilha no formato antigo, escolha a prova aqui.

@@ -395,7 +395,7 @@ const Index = () => {
                       </div>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Um PDF A5 por aluno. Nome do arquivo:{" "}
+                      Um PDF A4 (em pé) por aluno. Nome do arquivo:{" "}
                       <span className="font-mono text-foreground">{exampleFileName}.pdf</span>
                     </p>
                   </div>

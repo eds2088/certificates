@@ -125,10 +125,12 @@ export const drawCertificate = (
   ctx.fillText(name, textPosition.x * scale, textPosition.y * scale);
 };
 
-// A5 a 600 DPI (mesma qualidade das imagens originais)
-const PDF_WIDTH = 3496;
+// Página A4 em pé. 3508 × 4961 px dá cerca de 424 DPI no A4, mais do que a resolução
+// das imagens de fundo e dos escudos, então não há perda de qualidade.
+// A4 e A5 têm a mesma proporção (1 : 1,414), por isso os fundos servem nos dois.
+const PDF_WIDTH = 3508; // 4961 × 210 / 297, para a proporção exata do A4
 const PDF_HEIGHT = 4961;
-const A5_MM = { width: 148, height: 210 };
+const PAGE_MM = { width: 210, height: 297 };
 
 /**
  * A página é desenhada em duas faixas (metade de cima e metade de baixo) em vez de um
@@ -169,19 +171,19 @@ export const generateAllPDFsAsZip = async (
 
   for (const [i, cert] of certificates.entries()) {
     const overlays = await Promise.all(getOverlayPaths(cert).map((p) => overlay(resolveAsset(p))));
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5", compress: true });
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
 
     for (const tile of TILES) {
       canvas.height = tile.height; // também limpa o canvas
       ctx.setTransform(1, 0, 0, 1, 0, -tile.y);
       drawCertificate(ctx, PDF_WIDTH, PDF_HEIGHT, { base, overlays }, cert.name, textPosition, fontSize, overlaySettings);
-      const mmPerPx = A5_MM.height / PDF_HEIGHT;
+      const mmPerPx = PAGE_MM.height / PDF_HEIGHT;
       pdf.addImage(
         canvas.toDataURL("image/png"),
         "PNG",
         0,
         tile.y * mmPerPx,
-        A5_MM.width,
+        PAGE_MM.width,
         tile.height * mmPerPx,
         undefined,
         "FAST",

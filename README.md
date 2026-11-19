@@ -102,7 +102,7 @@ Os dados já chegam carregados se você veio da Calculadora. Também aceita uma 
 ### Passo 2: Visualização
 
 - **Turma, Prova e Ano:** preencha a turma antes de baixar. O ano já vem com o ano atual. Quando os dados vêm da Calculadora, a prova fica travada (os escudos já foram calculados com ela); para mudar, envie a planilha de novo na Calculadora. Com a planilha no formato antigo, escolha a prova aqui.
-- Fundos (A5 em pé): `public/base.png` (STARTERS), `public/basemovers.jpg` (MOVERS) e `public/baseflyers.jpg` (FLYERS).
+- Fundos (em pé, proporção A4): `public/base.png` (STARTERS), `public/basemovers.jpg` (MOVERS) e `public/baseflyers.jpg` (FLYERS).
 - Escudos: imagens em camadas sobre o fundo, em `public/overlays/`:
   - Coluna B (Reading/Writing): `B-1` a `B-5` e `B-z`
   - Coluna C (Listening): `C-1` a `C-5` e `C-z`
@@ -112,7 +112,7 @@ Os dados já chegam carregados se você veio da Calculadora. Também aceita uma 
 
 ### Passo 3: Download
 
-- Um PDF por aluno, com um certificado por página: A5 em pé, 600 DPI.
+- Um PDF por aluno, com um certificado por página: A4 em pé, em alta resolução (cerca de 420 DPI, mais que a resolução das imagens de fundo).
 - Nome de cada arquivo: `turma_Nome_Sobrenome_Prova_Ano.pdf`, por exemplo `121_Ana_Silva_Starters_2026.pdf`. Espaços viram `_`, e os caracteres que não podem estar em nome de arquivo (`/ \ : * ? " < > |`) são retirados. Dois alunos com o mesmo nome recebem `_2`, `_3`…
 - Todos os PDFs vêm num único `.zip`, por exemplo `121_Starters_2026.zip`.
 

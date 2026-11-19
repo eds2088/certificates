@@ -109,8 +109,16 @@ export const convertScoresToShields = (
  * o xlsx começa a leitura na primeira linha usada, que nem sempre é a linha 1.
  */
 export const readWorkbookRows = async (file: File): Promise<{ rows: unknown[][]; firstRow: number }> => {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // Todo .xlsx de verdade é um ZIP e começa com "PK". Se não começar, costuma ser uma
+  // página da web salva com o nome .xlsx (ex.: "Salvar link como" no GitHub).
+  if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+    throw new Error(
+      "este arquivo não é uma planilha Excel (.xlsx) de verdade. Talvez seja uma página da web salva com esse nome. " +
+        "Abra o arquivo no Excel e salve de novo como .xlsx, ou baixe o arquivo original outra vez.",
+    );
+  }
+  const workbook = XLSX.read(bytes, { type: "array" });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   const ref = firstSheet?.["!ref"];
   const firstRow = ref ? XLSX.utils.decode_range(ref).s.r + 1 : 1;

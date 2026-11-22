@@ -1,0 +1,4 @@
+build/
+__pycache__/
+*.pyc
+gerador/teste/main_teste.mjs

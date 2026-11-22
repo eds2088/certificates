@@ -1,6 +1,6 @@
 """Texturas de armadura (64x32, layout vanilla), Allay modificado (geometria própria),
 bloco de melancia secreta, ícones de pacote."""
-import random
+import math, random
 from PIL import Image, ImageDraw, ImageFont
 from arte_base import hexc
 
@@ -210,4 +210,38 @@ def pack_icon(sprites, subtitle):
     im.alpha_composite(tot, (148, 96))
     d.text((128, 30), 'SECRET OP', font=font(40), fill=hexc('#FFE45C'), anchor='mm', stroke_width=3, stroke_fill=hexc('#3F1A5F'))
     d.text((128, 232), subtitle, font=font(22), fill=hexc('#FFFFFF'), anchor='mm', stroke_width=2, stroke_fill=hexc('#000000'))
+    return im
+
+
+def melon_side_hd():
+    """Casca de melancia 32x32: listras verticais onduladas, manchas claras e brilho."""
+    rnd = random.Random(11)
+    im = Image.new('RGBA', (32, 32))
+    for y in range(32):
+        for x in range(32):
+            s = math.sin((x + 1.4 * math.sin(y / 4.5)) * 2 * math.pi / 8)
+            if s > 0.62: c = '#2E521D'
+            elif s > 0.25: c = '#3D722B'
+            elif s < -0.75 and rnd.random() < 0.55: c = '#8ECD56'
+            else: c = '#5BA14A'
+            f = 1.08 - 0.16 * (y / 31) + rnd.uniform(-0.04, 0.04)
+            im.putpixel((x, y), tuple(max(0, min(255, int(v * f))) for v in hexc(c)[:3]) + (255,))
+    for (x, y) in [(5, 4), (6, 4), (20, 11), (13, 23), (27, 18), (9, 29)]:
+        im.putpixel((x, y), hexc('#E8F8D0'))
+    return im
+
+
+def melon_top_hd():
+    rnd = random.Random(12)
+    im = Image.new('RGBA', (32, 32))
+    for y in range(32):
+        for x in range(32):
+            dx, dy = x - 15.5, y - 15.5
+            r = math.hypot(dx, dy) + 1.2 * math.sin(math.atan2(dy, dx) * 5)
+            ring = int(r / 2.6) % 3
+            c = ['#5BA14A', '#3D722B', '#8ECD56'][ring]
+            if r > 19: c = '#2E521D'
+            if math.hypot(dx, dy) < 3.2: c = '#6B5A2E' if math.hypot(dx, dy) > 1.5 else '#8C7A42'
+            f = 1 + rnd.uniform(-0.05, 0.05)
+            im.putpixel((x, y), tuple(max(0, min(255, int(v * f))) for v in hexc(c)[:3]) + (255,))
     return im

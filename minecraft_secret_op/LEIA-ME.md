@@ -1,124 +1,73 @@
-# SECRET OP v2 — Drops Secretos + 22 Pistas + Deathmatch
+# SECRET OP v3 — Começa na Vila · 25 min de preparo · Luta final sem área
 
 Add-on original para **Minecraft Bedrock** (celular, Windows, consoles) inspirado no desafio do vídeo
-*"Minecraft, But One Block Secretly Drops OP Items.."* (canal Kiingtong). Todo o código, as texturas e os
-sons foram criados do zero a partir do relatório do Mod Detector. Nada foi copiado do mod original do vídeo.
+*"Minecraft, But One Block Secretly Drops OP Items.."* (canal Kiingtong). Código, texturas e sons foram criados do zero.
 
 | Arquivo | Para que serve |
 |---|---|
-| `dist/SecretOP_v2_Mundo.mcworld` | **Mundo pronto**: abre já com os dois pacotes ativos, o lobby é construído sozinho e você recebe o Controle. |
-| `dist/SecretOP_v2_Drops_e_Pistas.mcaddon` | Os dois pacotes (BP + RP) para colocar em qualquer mundo seu. |
-| `dist/colecao_itens.png` | Prévia de todas as texturas (itens, armaduras, Allay, bloco). |
-| `gerador/` | Scripts Python que geram tudo (texturas, sons, JSON, mundo), o validador e o simulador de partida. |
-| `src/scripts/main.js` | Lógica do jogo (Script API estável). |
+| `dist/SecretOP_v3_Mundo.mcworld` | **Mundo pronto.** Abre, monta a vila e o desafio começa sozinho. |
+| `dist/SecretOP_v3_Drops_e_Pistas.mcaddon` | Os dois pacotes (BP + RP) para usar num mundo novo seu. |
+| `dist/colecao_itens.png` | Prévia de todas as texturas. |
 
----
+## O que mudou na v3 (pedido de ajustes)
+| Pedido | Como ficou |
+|---|---|
+| Layout mais bonito e realista | Texturas em **resolução dobrada** com luz, volume e brilho. Armas redesenhadas em **64 px** com metal em degradê, madeira com veios, trilho, janela de ejeção e luneta. Machado em meia-lua, melancia com casca ondulada, armaduras 128×64 e Allay 64×64. |
+| A gente começa na vila | Ao entrar, o jogo **procura uma vila de verdade** perto do spawn. Se não achar, tenta gerar uma vila do próprio jogo; se não conseguir, **constrói a vila do SECRET OP**: poço, sino, biblioteca com atril e lâmpada de redstone, ferreiro com mesa de ferraria, 4 casas, fazenda, postes de luz, aldeões, golem e gatos. Todos nascem nela. |
+| Dicas em português do Brasil | Tudo em PT-BR: pistas, dicas, nomes dos itens, descrições, placas, avisos e HUD (**PISTA:**, **PRÓXIMA PISTA**, **PREPARO**, **LUTA FINAL**). |
+| Quebrou, dropa itens OP | Quebre o bloco (ou derrote o mob) da pista: os **itens OP saltam do lugar**, com chance de **MAX DROPS**. |
+| Sem botão | **Não existe mais Controle nem menu.** O desafio começa sozinho ao entrar no mundo e o inventário começa vazio. |
+| Luta no final sem área | A **LUTA FINAL** acontece no mundo inteiro: sem arena, sem borda, sem teleporte. Vale fugir, se esconder ou ir ao Nether. A cada minuto o chat mostra a posição de cada sobrevivente, para ninguém se esconder para sempre. Último vivo vence. Sozinho, você enfrenta 3 ondas de Guardiões que nascem onde você estiver. |
+| 25 minutos de preparo, sem exceção | O preparo dura **exatamente 25:00**. Não dá para pular, encerrar ou adiantar. O relógio aparece acima da hotbar, com avisos aos 20, 15, 10, 5 e 1 minuto e contagem dos últimos 10 s. Se as pistas acabarem antes, o tempo continua até 25:00. PvP fica **desligado no preparo** e liga na luta. |
 
-## 1. Revisão da versão do ChatGPT (v1) comparada com o Mod Detector
+## Como instalar
+- **Android:** toque em `SecretOP_v3_Mundo.mcworld` → *Abrir com Minecraft*.
+- **iPhone/iPad:** *Arquivos* → segure o arquivo → *Compartilhar* → *Minecraft*.
+- **Windows:** dois cliques.
+- Entre no mundo **"SECRET OP v3 - Vila"** e espere uns segundos: "Preparando a vila..." → apresentação → **VALENDO!**
+- **Só o add-on:** importe o `.mcaddon`, crie um **mundo novo** e ative o *SECRET OP v3 | BP*. Não precisa de Experimentos.
+- Já tinha a v2? A v3 usa os mesmos códigos de pacote e **substitui** a v2 ao importar.
 
-| # | O que o relatório/vídeo mostra | Como estava na v1 | Como ficou na v2 |
-|---|---|---|---|
-| 1 | **22 pistas** com textos próprios ("One block but many slices to share", "Don't turn your back near the cliff's edge"…) | 7 charadas inventadas | As **22 pistas na ordem do vídeo**, traduzidas. Você escolhe jogar 8, 12, 16 ou 22. |
-| 2 | Cada pista tem **tempo**; se ninguém acerta, passa ("we missed one"). Entre pistas aparece **NEXT CLUE ----- 49%** | Sem tempo; a porcentagem era só o progresso | Tempo por pista (2 a 10 min), resposta revelada quando o tempo acaba, barra **NEXT CLUE** igual à do vídeo e **dica** na metade do tempo. |
-| 3 | Os drops **saltam do bloco/mob** ("the drops went into the wall"), às vezes **MAX DROPS** | Iam direto para o inventário | Os itens saltam do local resolvido com partículas e som; 12% de chance de **MAX DROPS!** |
-| 4 | Chat: *"Graser10 solved the clue! The answer was Cobweb"* | Mensagem genérica | "**Fulano resolveu a pista! A resposta era Teia**" (resposta em rosa, como no vídeo) + placar lateral de pistas por jogador. |
-| 5 | TNT Cowl explode quando o jogador pega fogo | Usava `player.isOnFire`, que **não existe na API** → nunca explodia | Usa o componente `minecraft:onfire`; explode sem quebrar blocos, apaga o fogo e protege quem usa. |
-| 6 | Totem Boost: "ganhe corações extras **carregando** este totem" + ícone com tempo | Só um item de usar | Carregar na hotbar/mão secundária dá **+4 corações**; usar dá 45 s de buffs com **contagem regressiva no HUD**. |
-| 7 | Allay modificado **azul** (#3366FF, olhos #99CCFF), que busca itens | Allay normal do jogo + teleporte de itens | **Criatura própria** (modelo, textura, animação de flutuar/asas, ovo), invulnerável, segue o dono e voa até os itens para trazê-los. |
-| 8 | Armas: rifle automático, pente de **31**, HUD "031" no canto, recarga | Som de explosão (`random.explode`), 1 tiro por toque | **Sons de tiro próprios** (sintetizados), tiro automático **segurando USAR**, flash, rastro de bala, **HEADSHOT** (×1,5), barra de recarga, HUD `▬▬ HK G3 Battle Rifle 031/31`. Mais pistola, escopeta (7 balins) e **M700 Sniper** (citada no vídeo). |
-| 9 | Espada Syntaxium 30 de dano, lentidão, explosão visual | Parcial | 30 de dano, Lentidão II, explosão **só visual** + partículas roxas. |
-| 10 | Machado Syntaxium: velocidade ao acertar e **derruba a árvore inteira** | Só fraqueza no alvo | Velocidade II ao acertar e **corta a árvore toda**. |
-| 11 | Katanas 18 de dano; Yami's Katana "lança o jogador e o alvo para o ar"; katana para "zip across the world" | Efeitos diferentes | 18 de dano; Yami lança os dois para o ar; Katana de Netherita tem **investida** (USAR). |
-| 12 | Netherite Leggings customizadas roxas com **Proteção IV e Inquebrável III** | "Calça Syntaxium" com invisibilidade (não existe no vídeo) | Calças roxas (#4B406A/#7E6EA8) já **encantadas**. |
-| 13 | Creeper Shirt **+1 Armadura** | Dava velocidade | +1 de armadura, rosto de creeper no peito do modelo. |
-| 14 | Armadura Syntaxium: velocidade e resistência, **acumulam** | Força + resistência no peito, pulo nas botas | Peitoral e botas dão Velocidade/Resistência e **acumulam** (I → II). Capacete Syntaxium (citado no vídeo) dá visão noturna; conjunto completo dá Força. |
-| 15 | Atril que liga redstone ao virar a página | Só contava como pista | Vale virar a página **ou** quebrar; o lobby tem uma **demonstração atril + lâmpada de redstone** com livro no baú. |
-| 16 | Deathmatch: contagem "Deathmatch: 27", "30 seconds until Deathmatch, get ready!", borda que encolhe | Arena de vidro criada na hora, borda invisível, sozinho não tinha luta | Mensagens do vídeo, contagem **3-2-1**, arena flutuante com lago e coberturas, **parede de partículas vermelhas** mostrando a borda, dano fora dela, espectador para eliminados, **modo solo com Guardiões**. |
-| 17 | Bloco de Melancia que pede **picareta de ferro** | Sem exigência de ferramenta | Só solta drops com picareta de ferro/diamante/netherita. |
-| 18 | Entrega de um `.mcworld` pronto | **Não havia** | `SecretOP_v2_Mundo.mcworld` com lobby, vitrine de armaduras e armas em suportes, placas e portal de descida. |
-| 19 | Visual pixel-art de Minecraft | Ícones 128×128 "pintados"; armas cortadas | Pixel art 16×16 (armas 32×32) seguindo **exatamente as paletas hex das fichas**, armaduras 64×32 no layout vanilla. |
-| 20 | — | Eventos duplicados (before + after) para atril/allay/axolote | Um único evento por ação. |
+## Como jogar
+1. Você começa na vila. Uma **PISTA** aparece acima da hotbar, com 2 min para resolver. Na metade aparece uma **Dica**.
+2. Quebre o bloco certo ou derrote o mob certo. Allay, gato, axolote e atril: interagir também vale.
+3. Quem acertar primeiro faz os drops OP saltarem. O placar à direita conta as pistas de cada um.
+4. Entre uma pista e outra, a barra **PRÓXIMA PISTA** enche em 10 s.
+5. Aos **25:00** começa a **LUTA FINAL**, sem área.
+6. Para jogar outra rodada (precisa de comandos, que já vêm ligados no mundo pronto):
+```
+/scriptevent secretop:reiniciar
+```
+Esse comando limpa os inventários e leva todos de volta à vila.
 
----
+**Armas:** segure USAR para atirar • AGACHAR + USAR recarrega (gasta 1 Caixa de Munição) • tiro na cabeça = HEADSHOT.
 
-## 2. Como instalar
+<details><summary>Respostas das 22 pistas (spoiler)</summary>
 
-### Mundo pronto (recomendado)
-- **Android:** baixe `SecretOP_v2_Mundo.mcworld` → toque no arquivo → *Abrir com Minecraft*. Ele aparece na lista de mundos.
-- **iPhone/iPad:** app *Arquivos* → segure o arquivo → *Compartilhar* → *Minecraft*.
-- **Windows:** dois cliques no arquivo.
-- Entre no mundo **"SECRET OP v2 - Drops & Pistas"**. Em ~3 segundos o lobby roxo é construído no céu, você é levado para lá e recebe o **Controle do Desafio** e o **Diário de Pistas**.
-
-### Só o add-on (num mundo seu)
-1. Abra `SecretOP_v2_Drops_e_Pistas.mcaddon` com o Minecraft e espere "Importação concluída".
-2. Crie um **mundo novo** → *Pacotes de comportamento* → ative **SECRET OP v2 … | BP** (o RP entra junto).
-3. **Não precisa ativar Experimentos.**
-4. Se você tinha a v1 instalada, **desative a v1** nesse mundo: as duas usam os mesmos IDs (`secretop:`).
-
-### Realm
-Abra o mundo pronto uma vez no seu aparelho; depois, no Realm: *Configurar Realm → Substituir mundo → escolha "SECRET OP v2"*.
-
----
-
-## 3. Como jogar
-1. Segure o **Controle do Desafio** e toque em **USAR** → menu → **▶ INICIAR DESAFIO** (em *Configurações*: nº de pistas, tempo, intervalo, duração do Deathmatch, manter inventário, treino).
-2. Contagem **3-2-1** e todos descem para o mundo. Uma pista **CLUE:** aparece acima da hotbar.
-3. **Quebre o bloco** ou **derrote o mob** da resposta. Allay, gato, axolote e atril: **interagir** também vale.
-4. Quem resolver primeiro faz os **drops OP saltarem** do lugar. Placar à direita mostra quantas pistas cada um acertou.
-5. Na metade do tempo aparece uma **Dica**. Se o tempo acabar, a resposta é revelada.
-6. Depois da última pista: **30 segundos** e todos vão para a arena do **Deathmatch**. Último vivo vence. Sozinho, derrote os **Guardiões**.
-7. No lobby: pise no **ouro** para descer; o Controle também tem "Ir para o lobby".
-
-**Armas:** segure USAR para atirar (rifle é automático) • AGACHAR + USAR recarrega (gasta 1 Caixa de Munição) • tiro na cabeça = HEADSHOT.
-**Maçã de Titânio:** seu próximo tiro explode. **Maçã Dourada Compactada:** Regeneração II, Absorção IV, Resistência.
-
-### Pistas (SPOILER)
-<details><summary>Mostrar as 22 respostas</summary>
-
-1 Melancia · 2 Cabra · 3 Allay · 4 TNT · 5 Gato · 6 Bloco de Neve · 7 Escada de mão · 8 Afogado · 9 Mesa de Ferraria · 10 Sino · 11 Lula Brilhante · 12 Pedregulho Musgoso · 13 Pedra Luminosa · 14 Axolote · 15 Obsidiana Chorona · 16 Abóbora Esculpida · 17 Atril · 18 Bloco de Ferro · 19 Abelha · 20 Teia · 21 Vaso de Flor · 22 Bloco de Mel (sempre a última, como no vídeo)
+Melancia · Cabra · Allay · TNT · Gato · Bloco de Neve · Escada de mão · Afogado · Mesa de Ferraria · Sino · Lula Brilhante · Pedregulho Musgoso · Pedra Luminosa · Axolote · Obsidiana Chorona · Abóbora Esculpida · Atril · Bloco de Ferro · Abelha · Teia · Vaso de Flor · Bloco de Mel
 </details>
 
-### Comandos de emergência (o mundo pronto já vem com comandos ativados)
-```
-/give @s secretop:clue_remote
-/give @s secretop:hk_g3_rifle
-/give @s secretop:ammo_box 16
-/give @s secretop:syntaxium_sword
-/give @s secretop:totem_boost
-```
+## O que foi verificado fora do jogo
+- Os 46 arquivos de configuração (itens, bloco, criatura, armaduras, partículas, modelo, animações, sons, texturas e manifestos) passaram nos esquemas públicos do Bedrock, com **0 erros**.
+- `main.js` checado com TypeScript contra as definições oficiais `@minecraft/server 2.0.0`.
+- **Simulação de rodada completa** (`gerador/teste/simular.mjs`), com 32 verificações OK:
+  - a vila é montada e o jogo começa sozinho, sem itens de botão;
+  - o PvP fica desligado no preparo e a luta começa **exatamente aos 1500 s**;
+  - 15 pistas foram resolvidas, com mais de 100 drops;
+  - a luta não usa arena nem borda;
+  - as 3 ondas de Guardiões vêm e a vitória é registrada;
+  - o comando `/scriptevent` reinicia a rodada.
 
----
+## O que NÃO foi testado
+- **Não deu para abrir o Minecraft Bedrock real aqui.** Ninguém viu ainda o resultado rodando num aparelho.
+- **Vila real ou gerada:** a busca por vila natural só olha os chunks carregados (cerca de 64 blocos). O comando `/place` pode não existir na sua versão; nesse caso o jogo constrói a vila do SECRET OP.
+- **Terreno da vila construída:** a vila é aplainada num quadrado de 57×57 blocos. Em montanhas ou perto de água pode ficar com degraus nas bordas.
+- **Portas e sinos:** os estados de bloco mudam entre versões. Se a porta falhar, fica só a passagem aberta.
+- **Tiro automático:** se segurar USAR não funcionar no seu aparelho, cada toque dispara um tiro.
+- **Mundo pronto:** o `.mcworld` vem sem a pasta `db/`; o terreno é gerado ao abrir.
 
-## 4. O que foi verificado fora do jogo
-- **Todos os 48 JSON** validados contra os esquemas públicos de Bedrock (Blockception) — itens, bloco, entidade, anexáveis, partículas, modelo, animações, manifestos, sons, atlas de texturas: **0 erros**.
-- `main.js` checado com **TypeScript** contra as definições oficiais `@minecraft/server 2.0.0` e `@minecraft/server-ui 2.0.0` (toda função/evento usado existe com essa assinatura).
-- **Simulação de partida completa** em Node com uma imitação da API (`gerador/teste/simular.mjs`): entrar → lobby → iniciar → 12 pistas resolvidas → drops → contagem → Deathmatch solo → tiros/HUD de munição → vitória → volta ao lobby. 24 verificações, todas OK.
-- Validador próprio (`gerador/validar.py`): toda textura, som, geometria, animação, nome traduzido e ID usado pelo script existe; o `level.dat` é relido byte a byte.
-
-## 5. O que NÃO foi testado (seja honesto com isso)
-- **Não foi possível abrir o Minecraft Bedrock real neste ambiente.** Importação, renderização e comportamento no celular/Realm não foram vistos com os olhos.
-- **Tiro automático segurando USAR** depende do item entrar em modo "usar" com `minecraft:use_modifiers`. Se no seu aparelho ele não segurar, cada toque ainda dispara (vira semiautomático).
-- O `.mcworld` é gerado sem a pasta `db/` (o jogo cria o terreno ao abrir pela primeira vez). O `level.dat` foi escrito à mão no formato NBT do Bedrock; se a sua versão reclamar, use o `.mcaddon` num mundo novo.
-- O lobby fica em **Y = 200** acima do ponto onde você nasce e a arena 52 blocos ao sul; tudo é construído por comandos no primeiro login.
-- Volumes dos sons sintetizados e tamanhos das partículas podem precisar de ajuste.
-- Não testado com outros add-ons de armas (podem conflitar).
-
-## 6. Decisões tomadas onde o vídeo não mostrava (estimado)
-- Dano das armas: rifle 8, pistola 7, escopeta 7×4, sniper 24 (headshot ×1,5). Pentes: 31 / 12 / 6 / 5.
-- Heavy Syntaxium Sword: 36 de dano, Lentidão IV no alvo e deixa você mais lento enquanto segura.
-- Syntaxium Axe 18 de dano; Laser Blade 20; katanas 18 (velocidade de ataque 2.5 aparece só na descrição — o Bedrock não tem recarga de ataque).
-- Totem Boost V: +4 corações carregando; uso = 45 s de Absorção V, Força II, Resistência II, Velocidade II e Regeneração II.
-- Texto da pista 11 (Lula Brilhante) não aparece no vídeo: foi criado.
-- A explosão do TNT Cowl e do tiro explosivo **não quebra blocos** (para não destruir o lobby/arena).
-- O ícone de efeito do Java (painel de efeitos com tempo) não existe no Bedrock: o tempo do Totem Boost aparece acima da hotbar e os efeitos reais aparecem no inventário.
-- O rifle é um sprite 2D (o modelo 3D do vídeo exigiria testes de posicionamento que não puderam ser feitos aqui).
-
-## 7. Como gerar de novo
+## Como gerar de novo
 ```
 cd gerador
-python3 gerar.py        # gera build/ e dist/
-python3 validar.py      # validações
-python3 colecao.py      # prévia das texturas
-node teste/simular.mjs  # simulação de partida
+python3 gerar.py && python3 validar.py && python3 colecao.py && node teste/simular.mjs
 ```
-Requisitos: Python 3 com Pillow e numpy, ffmpeg (libvorbis) e Node 18+.

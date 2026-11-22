@@ -390,3 +390,42 @@ def axe_sprite(edge, light, mid, dark, outline, handle, handle_dark):
     for q in add:
         p[q] = hexc(outline)
     return im
+
+
+def axe_hd(n=32):
+    """Machado Syntaxium em 32x32: lâmina em meia-lua com fio brilhante, alvado e cabo com faixas."""
+    from PIL import Image
+    from arte_base import hexc
+    im = Image.new('RGBA', (n, n), (0, 0, 0, 0)); p = im.load()
+    def put(x, y, c):
+        if 0 <= x < n and 0 <= y < n: p[x, y] = hexc(c)
+    # cabo diagonal (de baixo-esquerda para cima-direita), 3 px de espessura
+    for i in range(4, 28):
+        x, y = i, 31 - i
+        put(x, y, '#5A2A82'); put(x + 1, y, '#3F1A5F'); put(x, y - 1, '#7B34A3')
+        if i % 5 == 0:
+            put(x, y, '#B76FE9'); put(x + 1, y, '#7B34A3')
+    # lâmina: meia-lua à esquerda do topo do cabo
+    cx, cy = 21.5, 10.5
+    for y in range(n):
+        for x in range(n):
+            dx, dy = x + 0.5 - cx, y + 0.5 - cy
+            d = (dx * dx + dy * dy) ** 0.5
+            if d < 12.5 and dx < -1.5 and -9.5 < dy < 9.5 and (x + y) < 33:
+                t = d / 12.5
+                c = '#E3C2FF' if d > 11.3 else '#B76FE9' if d > 9.5 else '#7B34A3' if d > 6.5 else '#5A2A82'
+                if c != '#E3C2FF' and (x + 2 * y) % 9 == 0 and d > 6:
+                    c = '#8E45BC'
+                put(x, y, c)
+    # alvado (onde a lâmina encaixa no cabo)
+    for y in range(6, 16):
+        for x in range(18, 23):
+            if (x + y) in range(25, 33): put(x, y, '#3F1A5F' if (x + y) % 2 else '#2E1352')
+    # contorno
+    add = []
+    for y in range(n):
+        for x in range(n):
+            if p[x, y][3] == 0 and any(0 <= x + a < n and 0 <= y + b < n and p[x + a, y + b][3] > 0 for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                add.append((x, y))
+    for q in add: p[q] = hexc('#1A0833')
+    return im

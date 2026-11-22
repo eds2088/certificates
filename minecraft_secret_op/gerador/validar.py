@@ -3,7 +3,7 @@ import json, re, struct, sys, zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-BP, RP = ROOT / 'build' / 'SecretOP_v2_BP', ROOT / 'build' / 'SecretOP_v2_RP'
+BP, RP = ROOT / 'build' / 'SecretOP_v3_BP', ROOT / 'build' / 'SecretOP_v3_RP'
 erros = []
 def err(m): erros.append(m)
 
@@ -64,11 +64,11 @@ for m in set(re.findall(r"secretop[:.][a-z0-9_.]+", src)):
     if m.startswith('secretop.'):
         if m not in sdefs: err(f'som usado no script não existe: {m}')
     elif m.endswith(':'): continue
-    elif m not in item_ids | blocks | ents | particles and m not in ('secretop:state', 'secretop:use'):
+    elif m not in item_ids | blocks | ents | particles and m not in ('secretop:state', 'secretop:use', 'secretop:reiniciar'):
         err(f'ID usado no script não existe: {m}')
 for key in re.findall(r"NS \+ '([a-z0-9_]+)'", src):
     full = 'secretop:' + key
-    if full not in item_ids | blocks | ents and key not in ('state', 'ammo', 'owner', 'welcomed', 'showcase', 'fighter', 'dm_mob', 'explosive_shot'):
+    if full not in item_ids | blocks | ents and key not in ('state', 'ammo', 'owner', 'joined', 'dm_mob', 'explosive_shot'):
         err(f'NS + {key} não corresponde a nenhum item/bloco/entidade')
 for key in re.findall(r"['\[ ]([a-z0-9_]+)['\]]", src):
     pass
@@ -104,10 +104,10 @@ def read_nbt(b, i, t):
             n = struct.unpack_from('<H', b, i)[0]; name = b[i + 2:i + 2 + n].decode(); i += 2 + n
             out[name], i = read_nbt(b, i, tt)
     raise ValueError(t)
-w = zipfile.ZipFile(ROOT / 'dist' / 'SecretOP_v2_Mundo.mcworld')
+w = zipfile.ZipFile(ROOT / 'dist' / 'SecretOP_v3_Mundo.mcworld')
 names = w.namelist()
 for need in ('level.dat', 'levelname.txt', 'world_behavior_packs.json', 'world_resource_packs.json',
-             'behavior_packs/SecretOP_v2_BP/manifest.json', 'resource_packs/SecretOP_v2_RP/manifest.json'):
+             'behavior_packs/SecretOP_v3_BP/manifest.json', 'resource_packs/SecretOP_v3_RP/manifest.json'):
     if need not in names: err(f'mcworld sem {need}')
 ld = w.read('level.dat')
 ver, ln = struct.unpack_from('<ii', ld, 0)
@@ -115,8 +115,8 @@ if ln != len(ld) - 8: err('level.dat: tamanho do cabeçalho errado')
 tag, nlen = struct.unpack_from('<bH', ld, 8)
 root, end = read_nbt(ld, 11 + nlen, 10)
 if end != len(ld): err('level.dat: bytes sobrando')
-a = zipfile.ZipFile(ROOT / 'dist' / 'SecretOP_v2_Drops_e_Pistas.mcaddon').namelist()
-if 'SecretOP_v2_BP/manifest.json' not in a or 'SecretOP_v2_RP/manifest.json' not in a: err('mcaddon sem manifestos na raiz das pastas')
+a = zipfile.ZipFile(ROOT / 'dist' / 'SecretOP_v3_Drops_e_Pistas.mcaddon').namelist()
+if 'SecretOP_v3_BP/manifest.json' not in a or 'SecretOP_v3_RP/manifest.json' not in a: err('mcaddon sem manifestos na raiz das pastas')
 
 print(f'JSON: {len(js)} | itens: {len(item_ids)} | partículas: {len(particles)} | sons: {len(sdefs)} | level.dat: {len(root)} tags, LevelName={root["LevelName"]!r}')
 if erros:

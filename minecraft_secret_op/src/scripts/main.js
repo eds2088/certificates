@@ -1,20 +1,26 @@
 /*
- * SECRET OP v2 — Drops Secretos + Pistas (adaptação original para Minecraft Bedrock)
+ * SECRET OP v3 — Drops Secretos + Pistas (adaptação original para Minecraft Bedrock)
  * Inspirado no desafio do vídeo "Minecraft, But One Block Secretly Drops OP Items.." (Kiingtong).
  * Todo o código, texturas e sons deste pacote foram criados do zero.
  *
- * API: @minecraft/server 2.0.0 + @minecraft/server-ui 2.0.0 (estáveis, sem Experimentos).
+ * Regras da v3:
+ *  - sem botões: o desafio começa sozinho ao entrar no mundo, numa VILA;
+ *  - 25 minutos de preparo, sem exceção (não dá para pular nem encerrar antes);
+ *  - pistas em português; quem quebra o bloco/derrota o mob certo faz os drops OP saltarem;
+ *  - no fim, LUTA FINAL sem área: vale ir para qualquer lugar. Último vivo vence.
+ *
+ * API: @minecraft/server 2.0.0 (estável, sem Experimentos).
  */
 import {
   world, system, ItemStack, EquipmentSlot, GameMode, EntityDamageCause,
-  EnchantmentTypes, DisplaySlotId, ObjectiveSortOrder,
+  EnchantmentTypes, DisplaySlotId, ObjectiveSortOrder, BlockVolume,
 } from '@minecraft/server';
-import { ActionFormData, ModalFormData } from '@minecraft/server-ui';
 
 const NS = 'secretop:';
-const LOBBY_Y = 200;
-const ARENA_OFFSET_Z = 52;
-const ARENA_RADIUS = 30;
+const PREP_SECS = 25 * 60;   // 25 minutos de preparo — fixo
+const CLUE_SECS = 120;       // tempo máximo de cada pista
+const GAP_SECS = 10;         // barra "PRÓXIMA PISTA"
+const SOLO_WAVES = 3;
 
 // ------------------------------------------------------------------ PISTAS
 // As 22 pistas na ordem em que aparecem no vídeo. "kill" = matar o mob; "use" = interagir também vale.
@@ -178,25 +184,23 @@ function rollPool() {
 }
 
 // ------------------------------------------------------------------ ESTADO
-const DEFAULT_SETTINGS = { count: 12, clueMin: 5, gapSecs: 20, dmSecs: 180, keepInv: true, training: true };
-let S = null; // estado do jogo, salvo em propriedade dinâmica
-
-function freshState() {
+let S = null;
+function freshState(village = null) {
   return {
-    phase: 'idle', order: [], pos: 0, timeLeft: 0, total: 0, log: [],
-    settings: { ...DEFAULT_SETTINGS }, lobby: null, arenaBuilt: false, alive: [], solo: false, winner: '',
+    phase: 'setup', prepLeft: PREP_SECS, introLeft: 0,
+    clue: { pos: 0, mode: 'gap', left: GAP_SECS, total: GAP_SECS },
+    log: [], village, alive: [], solo: false, wave: 0, waveDelay: 0, winner: '', round: 1,
   };
 }
 function load() {
   try {
     const raw = world.getDynamicProperty(NS + 'state');
     S = raw ? { ...freshState(), ...JSON.parse(String(raw)) } : freshState();
-    S.settings = { ...DEFAULT_SETTINGS, ...(S.settings || {}) };
   } catch { S = freshState(); }
 }
-function save() { try { world.setDynamicProperty(NS + 'state', JSON.stringify(S)); } catch { /* cheio */ } }
-
-const currentClue = () => (S.phase === 'clue' || S.phase === 'intermission') ? CLUES[S.order[S.pos]] : undefined;
+function save() { try { world.setDynamicProperty(NS + 'state', JSON.stringify(S)); } catch { /* */ } }
+const currentClue = () => (S.phase === 'prep' && S.clue.mode !== 'done') ? CLUES[S.clue.pos] : undefined;
+const clueActive = () => S.phase === 'prep' && S.clue.mode === 'clue';
 
 // ------------------------------------------------------------------ UTILITÁRIOS
 const tick = () => system.currentTick;
@@ -245,22 +249,10 @@ function takeItem(p, id, amount = 1) {
   }
   return amount <= 0;
 }
-function inLobby(loc) {
-  const L = S?.lobby; if (!L) return false;
-  return Math.abs(loc.x - L.x) <= 12 && Math.abs(loc.z - L.z) <= 12 && loc.y >= LOBBY_Y - 3 && loc.y <= LOBBY_Y + 8;
-}
-function arenaCenter() { const L = S.lobby; return L ? { x: L.x, y: LOBBY_Y, z: L.z + ARENA_OFFSET_Z } : undefined; }
-function inArena(loc) {
-  const C = arenaCenter(); if (!C) return false;
-  return Math.hypot(loc.x - C.x, loc.z - C.z) <= ARENA_RADIUS + 3 && loc.y >= LOBBY_Y - 6 && loc.y <= LOBBY_Y + 12;
-}
-
-// ------------------------------------------------------------------ SCOREBOARD (lateral direita)
+// ------------------------------------------------------------------ PLACAR (lateral direita)
 function board() {
   try {
-    let o = world.scoreboard.getObjective('secretop_pistas');
-    if (!o) o = world.scoreboard.addObjective('secretop_pistas', '§e§lSECRET OP §r§7pistas');
-    return o;
+    return world.scoreboard.getObjective('secretop_pistas') ?? world.scoreboard.addObjective('secretop_pistas', '§e§lSECRET OP §r§7pistas');
   } catch { return undefined; }
 }
 function showBoard() {
@@ -275,72 +267,92 @@ function resetBoard() {
   showBoard();
 }
 
-// ------------------------------------------------------------------ FLUXO DO DESAFIO
-function startChallenge(starter) {
-  const st = S.settings;
-  const count = Math.min(CLUES.length, Math.max(4, st.count));
-  let order = CLUES.map((_, i) => i);
-  if (count < CLUES.length) {
-    const last = CLUES.length - 1; // a última pista é sempre o Bloco de Mel, como no vídeo
-    const pool = order.slice(0, last).sort(() => Math.random() - 0.5).slice(0, count - 1).sort((a, b) => a - b);
-    order = [...pool, last];
+// ------------------------------------------------------------------ FLUXO
+const overworld = () => world.getDimension('overworld');
+
+function beginIntro() {
+  S.phase = 'intro'; S.introLeft = 14; S.prepLeft = PREP_SECS;
+  S.clue = { pos: 0, mode: 'gap', left: GAP_SECS, total: GAP_SECS };
+  S.log = []; S.alive = []; S.wave = 0; S.winner = ''; save();
+  resetBoard();
+  cmd(overworld(), 'gamerule pvp false');
+  cmd(overworld(), 'gamerule keepinventory true');
+  for (const p of players()) toVillage(p);
+}
+
+function introSecond() {
+  const msgs = {
+    13: ['§l§dSECRET OP', '§fVocê começou na §avila§f!'],
+    10: ['§e25 minutos', '§fde preparo — sem exceção'],
+    7: ['§6PISTAS', '§fQuebre o bloco ou derrote o mob certo'],
+    4: ['§bDROPS OP', '§fsaltam de quem acertar primeiro'],
+    2: ['§cLUTA FINAL', '§fno fim, sem área: vale ir a qualquer lugar'],
+  };
+  const m = msgs[S.introLeft];
+  if (m) for (const p of players()) { title(p, m[0], m[1], 50); sfx(p, 'note.pling', 0.9 + S.introLeft / 30); }
+  if (S.introLeft <= 0) {
+    S.phase = 'prep'; save();
+    say('§d[SECRET OP] §aVALENDO! §f25:00 de preparo começaram. Pistas em instantes...');
+    for (const p of players()) { title(p, '§a§lVALENDO!', '§f25:00 de preparo', 40); sfx(p, 'random.levelup'); }
   }
-  S.order = order; S.pos = 0; S.log = []; S.alive = []; S.winner = '';
-  S.phase = 'intermission'; S.total = 8; S.timeLeft = 8;
-  save(); resetBoard();
-  cmd(world.getDimension('overworld'), `gamerule keepinventory ${st.keepInv ? 'true' : 'false'}`);
-  say(`§d[SECRET OP] §f${starter.name} §ainiciou o desafio! §f${order.length} pistas. Quem resolver primeiro ganha os drops OP!`);
-  [3, 2, 1].forEach((n, i) => system.runTimeout(() => {
-    for (const p of players()) { title(p, `§e${n}`, '', 14); sfx(p, 'note.pling', 0.8 + i * 0.2); }
-  }, 20 + i * 20));
-  system.runTimeout(() => {
-    for (const p of players()) {
-      title(p, '§aVAMOS LÁ!', '§fResolva as pistas e pegue os drops OP', 40); sfx(p, 'random.levelup');
-      if (inLobby(p.location)) dropToWorld(p);
-    }
-  }, 80);
+}
+
+function prepSecond() {
+  S.prepLeft--;
+  const left = S.prepLeft;
+  if ([1200, 900, 600, 300, 60].includes(left)) {
+    const min = left / 60;
+    say(`§e⏳ Faltam §l${min} minuto${min > 1 ? 's' : ''}§r§e para a LUTA FINAL!`);
+    for (const p of players()) { title(p, ' ', `§eFaltam ${min} min para a luta`, 30); sfx(p, 'note.bell', 1.2); }
+  }
+  if (left <= 10 && left > 0) for (const p of players()) { title(p, `§c${left}`, '§fLUTA FINAL', 14); sfx(p, 'note.hat', 1.5); }
+  if (left <= 0) { startFight(); return; }
+  // máquina das pistas (só durante o preparo)
+  const c = S.clue;
+  if (c.mode === 'done') return;
+  c.left--;
+  if (c.mode === 'gap' && c.left <= 0) beginClue();
+  else if (c.mode === 'clue' && c.left === Math.floor(c.total / 2)) say(`§8[Dica] §7${CLUES[c.pos].hint}`);
+  else if (c.mode === 'clue' && c.left <= 0) expireClue();
 }
 
 function beginClue() {
-  const c = currentClue(); if (!c) return;
-  S.phase = 'clue'; S.total = S.settings.clueMin * 60; S.timeLeft = S.total; save();
-  say(`§6§lCLUE: §r§f${c.riddle} §7(pista ${S.pos + 1}/${S.order.length})`);
-  for (const p of players()) { title(p, '§6NOVA PISTA', `§f${c.riddle}`, 60); sfx(p, 'note.pling', 1.4); }
+  const k = CLUES[S.clue.pos];
+  S.clue.mode = 'clue'; S.clue.left = CLUE_SECS; S.clue.total = CLUE_SECS; save();
+  say(`§6§lPISTA ${S.clue.pos + 1}: §r§f${k.riddle}`);
+  for (const p of players()) { title(p, `§6PISTA ${S.clue.pos + 1}`, `§f${k.riddle}`, 70); sfx(p, 'note.pling', 1.4); }
 }
 
-function nextAfterClue() {
-  S.pos++;
-  if (S.pos >= S.order.length) {
-    S.phase = 'countdown'; S.total = 30; S.timeLeft = 30; save();
-    say('§eEnigma final resolvido! Preparem-se para o Deathmatch.');
-    say('§e30 segundos até o Deathmatch, preparem-se!');
-    for (const p of players()) { title(p, '§cDEATHMATCH', '§fem 30 segundos', 50); sfx(p, 'random.anvil_land', 0.6); }
+function nextClue() {
+  S.clue.pos++;
+  if (S.clue.pos >= CLUES.length) {
+    S.clue.mode = 'done'; save();
+    say('§eTodas as pistas acabaram! Use o tempo que resta para se preparar para a §cLUTA FINAL§e.');
   } else {
-    S.phase = 'intermission'; S.total = S.settings.gapSecs; S.timeLeft = S.total; save();
+    S.clue.mode = 'gap'; S.clue.left = GAP_SECS; S.clue.total = GAP_SECS; save();
   }
 }
 
 function solve(p, loc) {
-  if (S.phase !== 'clue') return;
-  const c = currentClue(); if (!c) return;
-  const o = board();
-  try { o?.addScore(p, 1); } catch { /* */ }
-  S.log.push({ i: S.order[S.pos], by: p.name });
-  say(`§a${p.name} §fresolveu a pista! A resposta era §d${c.answer}`);
+  if (!clueActive()) return;
+  const k = CLUES[S.clue.pos];
+  try { board()?.addScore(p, 1); } catch { /* */ }
+  S.log.push({ i: S.clue.pos, by: p.name });
+  say(`§a${p.name} §fresolveu a pista! A resposta era §d${k.answer}`);
   for (const q of players()) {
-    if (q.id === p.id) { title(q, '§aPISTA RESOLVIDA!', `§fA resposta era §d${c.answer}`, 50); sfx(q, 'random.levelup'); }
-    else { title(q, `§c${p.name} resolveu!`, `§fA resposta era §d${c.answer}`, 40); sfx(q, 'note.bass', 0.7); }
+    if (q.id === p.id) { title(q, '§aPISTA RESOLVIDA!', `§fA resposta era §d${k.answer}`, 50); sfx(q, 'random.levelup'); }
+    else { title(q, `§c${p.name} resolveu!`, `§fA resposta era §d${k.answer}`, 40); sfx(q, 'note.bass', 0.7); }
   }
-  dropRewards(p, loc, c);
-  nextAfterClue();
+  dropRewards(p, loc, k);
+  nextClue();
 }
 
 function expireClue() {
-  const c = currentClue(); if (!c) return;
-  S.log.push({ i: S.order[S.pos], by: '' });
-  say(`§7Ninguém resolveu a tempo! A resposta era §d${c.answer}`);
+  const k = CLUES[S.clue.pos];
+  S.log.push({ i: S.clue.pos, by: '' });
+  say(`§7Ninguém resolveu a tempo! A resposta era §d${k.answer}`);
   for (const p of players()) sfx(p, 'note.bass', 0.5);
-  nextAfterClue();
+  nextClue();
 }
 
 function dropRewards(p, loc, clue) {
@@ -363,254 +375,300 @@ function dropRewards(p, loc, clue) {
   if (max) { title(p, '§6§lMAX DROPS!', `§e${keys.length} itens OP`, 40); say(`§6${p.name} conseguiu MAX DROPS!`); }
 }
 
-function dropToWorld(p) {
-  try {
-    const dim = world.getDimension('overworld');
-    const L = S.lobby ?? { x: p.location.x, z: p.location.z };
-    const ox = L.x + (Math.random() * 6 - 3), oz = L.z - 16 + (Math.random() * 6 - 3);
-    const hit = dim.getBlockFromRay({ x: ox, y: LOBBY_Y - 12, z: oz }, { x: 0, y: -1, z: 0 }, { maxDistance: 300, includeLiquidBlocks: true });
-    const y = hit ? hit.block.location.y + 1.2 : 90;
-    p.teleport({ x: ox, y, z: oz }, { dimension: dim });
-    effect(p, 'slow_falling', 60); effect(p, 'resistance', 100, 4);
-    fx(dim, 'secretop:op_burst', p.location);
-  } catch { /* */ }
-}
-function goLobby(p) {
-  const L = S.lobby; if (!L) return;
-  try { p.teleport({ x: L.x + 0.5, y: LOBBY_Y + 1, z: L.z + 0.5 }, { dimension: world.getDimension('overworld') }); } catch { /* */ }
+// ------------------------------------------------------------------ LUTA FINAL (sem área)
+function startFight() {
+  const list = players().filter((p) => p.getGameMode() !== GameMode.Spectator && p.getGameMode() !== GameMode.Creative);
+  S.phase = 'fight'; S.alive = list.map((p) => p.id); S.solo = list.length <= 1; S.wave = 0; S.waveDelay = 4; S.winner = ''; save();
+  cmd(overworld(), 'gamerule pvp true');
+  say('§c§lLUTA FINAL! §r§fSem área e sem borda: vale ir para qualquer lugar. Último vivo vence!');
+  for (const p of players()) { title(p, '§c§lLUTA FINAL!', '§fSem área — vá para onde quiser!', 60); sfx(p, 'mob.wither.spawn', 1, 0.5); }
+  if (S.solo) say('§7Modo solo: sobreviva a §c3 ondas de Guardiões§7 que vão te caçar onde você estiver.');
 }
 
-// ------------------------------------------------------------------ DEATHMATCH
-function startDeathmatch() {
-  const dim = world.getDimension('overworld');
-  const C = arenaCenter();
-  if (!C) { S.phase = 'idle'; save(); return; }
-  buildArena(dim);
-  const list = players();
-  S.phase = 'deathmatch'; S.total = S.settings.dmSecs; S.timeLeft = S.total;
-  S.alive = list.map((p) => p.id); S.solo = list.length <= 1; S.winner = ''; save();
-  list.forEach((p, i) => {
-    const a = (i / Math.max(1, list.length)) * Math.PI * 2;
+function spawnWave(p) {
+  S.wave++;
+  const dim = p.dimension;
+  const pool = ['minecraft:vindicator', 'minecraft:zombie', 'minecraft:skeleton', 'minecraft:pillager', 'minecraft:husk', 'minecraft:stray'];
+  const n = 2 + S.wave * 2;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, r = 9 + Math.random() * 6;
+    const x = p.location.x + Math.cos(a) * r, z = p.location.z + Math.sin(a) * r;
+    let y = p.location.y;
+    try { const top = dim.getTopmostBlock({ x, z }); if (top && Math.abs(top.location.y - p.location.y) < 12) y = top.location.y + 1; } catch { /* */ }
     try {
-      p.setGameMode(GameMode.Survival);
-      p.teleport({ x: C.x + Math.cos(a) * 18 + 0.5, y: C.y + 1, z: C.z + Math.sin(a) * 18 + 0.5 }, { dimension: dim, facingLocation: C });
-      effect(p, 'resistance', 100, 4); give(p, makeItem('ammo_box'));
-      p.addTag(NS + 'fighter');
+      const e = dim.spawnEntity(pool[(i + S.wave) % pool.length], { x, y, z });
+      e.addTag(NS + 'dm_mob'); e.nameTag = `§cGuardião ${S.wave}`;
     } catch { /* */ }
-  });
-  [3, 2, 1].forEach((n, i) => system.runTimeout(() => {
-    for (const p of players()) { title(p, `§c${n}`, '§fÚltimo sobrevivente vence!', 14); sfx(p, 'note.pling', 0.7 + i * 0.2); }
-  }, i * 20));
-  system.runTimeout(() => {
-    for (const p of players()) { title(p, '§c§lLUTEM!', '', 30); sfx(p, 'mob.wither.spawn', 1, 0.5); }
-    if (S.solo) spawnGuardians(dim, C);
-  }, 60);
-  say(`§cDEATHMATCH! §f${list.length} jogador(es). A borda vai encolher — fique dentro!`);
-}
-
-function spawnGuardians(dim, C) {
-  const mobs = ['minecraft:vindicator', 'minecraft:vindicator', 'minecraft:zombie', 'minecraft:zombie', 'minecraft:skeleton',
-    'minecraft:skeleton', 'minecraft:pillager', 'minecraft:husk'];
-  mobs.forEach((id, i) => {
-    const a = (i / mobs.length) * Math.PI * 2 + 0.4;
-    try {
-      const e = dim.spawnEntity(id, { x: C.x + Math.cos(a) * 10, y: C.y + 1, z: C.z + Math.sin(a) * 10 });
-      e.addTag(NS + 'dm_mob'); e.nameTag = '§cGuardião';
-    } catch { /* */ }
-  });
-  say('§7Modo solo: derrote os §cGuardiões §7antes que a borda feche!');
-}
-
-function borderRadius() {
-  const prog = 1 - S.timeLeft / Math.max(1, S.total);
-  return Math.max(5, Math.round(ARENA_RADIUS - (ARENA_RADIUS - 5) * prog));
-}
-
-function deathmatchSecond() {
-  const dim = world.getDimension('overworld');
-  const C = arenaCenter(); if (!C) return;
-  const r = borderRadius();
-  const alive = players().filter((p) => S.alive.includes(p.id));
-  for (const p of alive) {
-    const d = Math.hypot(p.location.x - C.x, p.location.z - C.z);
-    if (d > r) {
-      try { p.applyDamage(2, { cause: EntityDamageCause.magic }); } catch { /* */ }
-      title(p, ' ', '§cVolte para dentro da borda!', 10);
-    }
   }
+  say(`§cOnda ${S.wave}/${SOLO_WAVES}: ${n} Guardiões estão vindo!`);
+  title(p, `§cONDA ${S.wave}`, `§f${n} Guardiões`, 30);
+  save();
+}
+
+function fightSecond() {
+  const alive = players().filter((p) => S.alive.includes(p.id));
+  if (alive.length === 0) return finish(undefined);
   if (S.solo) {
     let left = 0;
-    try { left = dim.getEntities({ tags: [NS + 'dm_mob'], location: C, maxDistance: 60 }).length; } catch { /* */ }
-    if (alive.length === 0) return finish(undefined);
-    if (S.timeLeft < S.total - 5 && left === 0) return finish(alive[0]);
-    if (S.timeLeft <= 0) return finish(alive[0]);
+    try { left = overworld().getEntities({ tags: [NS + 'dm_mob'] }).length; } catch { /* */ }
+    for (const d of ['nether', 'the_end']) { try { left += world.getDimension(d).getEntities({ tags: [NS + 'dm_mob'] }).length; } catch { /* */ } }
+    if (left === 0) {
+      if (S.wave >= SOLO_WAVES) return finish(alive[0]);
+      if (--S.waveDelay <= 0) { spawnWave(alive[0]); S.waveDelay = 8; }
+    }
   } else {
-    if (alive.length <= 1) return finish(alive[0]);
-    if (S.timeLeft <= 0) {
-      const best = alive.sort((a, b) => (hp(b) - hp(a)))[0];
-      return finish(best);
+    if (alive.length === 1) return finish(alive[0]);
+    S.fightSecs = (S.fightSecs ?? 0) + 1;
+    if (S.fightSecs % 60 === 0) {
+      say('§7📍 Posições: ' + alive.map((p) => `§f${p.name} §7(${Math.round(p.location.x)}, ${Math.round(p.location.z)})`).join(' §8| '));
     }
   }
 }
-const hp = (p) => { try { return p.getComponent('minecraft:health')?.currentValue ?? 0; } catch { return 0; } };
 
 function finish(winner) {
-  S.phase = 'finished'; S.timeLeft = 10; S.total = 10; S.winner = winner?.name ?? ''; save();
-  const dim = world.getDimension('overworld');
-  try { for (const e of dim.getEntities({ tags: [NS + 'dm_mob'] })) e.remove(); } catch { /* */ }
+  S.phase = 'finished'; S.winner = winner?.name ?? ''; save();
+  try { for (const e of overworld().getEntities({ tags: [NS + 'dm_mob'] })) e.remove(); } catch { /* */ }
+  cmd(overworld(), 'gamerule pvp true');
   if (winner) {
     say(`§6§l${winner.name} VENCEU O SECRET OP!`);
-    for (const p of players()) { title(p, p.id === winner.id ? '§6§lVOCÊ VENCEU!' : `§6${winner.name} venceu!`, '§eGG!', 80); sfx(p, 'random.totem'); }
-    try { for (let i = 0; i < 6; i++) system.runTimeout(() => fx(dim, 'minecraft:totem_particle', winner.location), i * 6); } catch { /* */ }
-  } else {
-    say('§7O Deathmatch terminou sem vencedor.');
-  }
+    for (const p of players()) { title(p, p.id === winner.id ? '§6§lVOCÊ VENCEU!' : `§6${winner.name} venceu!`, '§eGG!', 100); sfx(p, 'random.totem'); }
+    for (let i = 0; i < 6; i++) system.runTimeout(() => { try { fx(winner.dimension, 'minecraft:totem_particle', winner.location); } catch { /* */ } }, i * 6);
+  } else say('§7A luta final terminou sem vencedor.');
+  say('§8Para jogar outra rodada, digite: §f/scriptevent secretop:reiniciar');
 }
 
-function resetToLobby() {
-  S.phase = 'idle'; S.alive = []; S.timeLeft = 0; save();
+function restartRound() {
   for (const p of players()) {
-    try { p.setGameMode(GameMode.Survival); p.removeTag(NS + 'fighter'); } catch { /* */ }
-    goLobby(p);
-  }
-  say('§d[SECRET OP] §fDe volta ao lobby. Use o §dControle do Desafio §fpara jogar de novo.');
-}
-
-// ------------------------------------------------------------------ CONSTRUÇÃO (lobby + arena)
-function buildLobby(dim, cx, cz) {
-  const y = LOBBY_Y;
-  const F = (a, b, block) => cmd(dim, `fill ${a.x} ${a.y} ${a.z} ${b.x} ${b.y} ${b.z} ${block}`);
-  F({ x: cx - 11, y: y - 1, z: cz - 11 }, { x: cx + 11, y: y + 7, z: cz + 11 }, 'air');
-  F({ x: cx - 11, y: y - 2, z: cz - 11 }, { x: cx + 11, y: y - 2, z: cz + 11 }, 'polished_deepslate');
-  F({ x: cx - 10, y: y - 1, z: cz - 10 }, { x: cx + 10, y: y - 1, z: cz + 10 }, 'purpur_block');
-  F({ x: cx - 11, y: y - 1, z: cz - 11 }, { x: cx + 11, y: y - 1, z: cz - 11 }, 'polished_blackstone_bricks');
-  F({ x: cx - 11, y: y - 1, z: cz + 11 }, { x: cx + 11, y: y - 1, z: cz + 11 }, 'polished_blackstone_bricks');
-  F({ x: cx - 11, y: y - 1, z: cz - 11 }, { x: cx - 11, y: y - 1, z: cz + 11 }, 'polished_blackstone_bricks');
-  F({ x: cx + 11, y: y - 1, z: cz - 11 }, { x: cx + 11, y: y - 1, z: cz + 11 }, 'polished_blackstone_bricks');
-  for (const [dx, dz] of [[-6, -6], [6, -6], [-6, 6], [6, 6], [0, 0]]) F({ x: cx + dx, y: y - 1, z: cz + dz }, { x: cx + dx, y: y - 1, z: cz + dz }, 'sea_lantern');
-  // paredes de vidro roxo
-  F({ x: cx - 11, y, z: cz - 11 }, { x: cx + 11, y: y + 3, z: cz - 11 }, 'purple_stained_glass');
-  F({ x: cx - 11, y, z: cz + 11 }, { x: cx + 11, y: y + 3, z: cz + 11 }, 'purple_stained_glass');
-  F({ x: cx - 11, y, z: cz - 11 }, { x: cx - 11, y: y + 3, z: cz + 11 }, 'purple_stained_glass');
-  F({ x: cx + 11, y, z: cz - 11 }, { x: cx + 11, y: y + 3, z: cz + 11 }, 'purple_stained_glass');
-  for (const [dx, dz] of [[-11, -11], [11, -11], [-11, 11], [11, 11]]) F({ x: cx + dx, y, z: cz + dz }, { x: cx + dx, y: y + 4, z: cz + dz }, 'amethyst_block');
-  // portal de saída (lado norte): ouro + tapete roxo
-  F({ x: cx - 1, y: y - 1, z: cz - 9 }, { x: cx + 1, y: y - 1, z: cz - 7 }, 'gold_block');
-  F({ x: cx - 1, y: y + 3, z: cz - 9 }, { x: cx + 1, y: y + 3, z: cz - 7 }, 'end_rod');
-  // demonstração do atril + redstone (ficha 5.8)
-  cmd(dim, `setblock ${cx + 7} ${y} ${cz - 7} lectern`);
-  cmd(dim, `setblock ${cx + 8} ${y} ${cz - 7} redstone_lamp`);
-  cmd(dim, `setblock ${cx + 7} ${y} ${cz - 8} chest`);
-  // pedestal do Bloco de Melancia Secreto
-  cmd(dim, `setblock ${cx - 7} ${y - 1} ${cz - 7} gold_block`);
-  cmd(dim, `setblock ${cx - 7} ${y} ${cz - 7} secretop:secret_melon`);
-  system.runTimeout(() => {
     try {
-      const chest = dim.getBlock({ x: cx + 7, y, z: cz - 8 })?.getComponent('minecraft:inventory')?.container;
-      if (chest) {
-        chest.setItem(0, new ItemStack('minecraft:writable_book', 1));
-        chest.setItem(1, new ItemStack('minecraft:iron_pickaxe', 1));
-        chest.setItem(2, new ItemStack('minecraft:bread', 16));
-      }
+      p.setGameMode(GameMode.Survival);
+      cmd(p, 'clear @s'); cmd(p, 'effect @s clear'); cmd(p, 'effect @s instant_health 1 20 true');
     } catch { /* */ }
-    sign(dim, { x: cx, y, z: cz + 9 }, '§l§dSECRET OP§r\n§fUse o §dControle\n§fpara começar!', true);
-    sign(dim, { x: cx - 2, y, z: cz - 10 }, '§6CLUE§r\nResolva a pista:\nquebre o bloco ou\nderrote o mob');
-    sign(dim, { x: cx + 2, y, z: cz - 10 }, '§aDescer§r\nPise no §6ouro\n§fpara ir ao mundo');
-    sign(dim, { x: cx + 6, y, z: cz - 7 }, '§9Atril§r\nPonha o livro e\nvire a página:\na lâmpada acende!');
-    sign(dim, { x: cx - 6, y, z: cz - 7 }, '§2Melancia\nSecreta§r\nQuebre com\npicareta de ferro');
-    showcase(dim, cx, y, cz);
-  }, 10);
+  }
+  try { for (const e of overworld().getEntities({ tags: [NS + 'dm_mob'] })) e.remove(); } catch { /* */ }
+  const v = S.village; const round = (S.round ?? 1) + 1;
+  S = freshState(v); S.round = round;
+  say(`§d[SECRET OP] §fNova rodada (§e${round}§f)! Todos de volta para a vila.`);
+  beginIntro();
 }
 
-function sign(dim, loc, text, facingNorth = false) {
+// ------------------------------------------------------------------ VILA INICIAL
+// 1) procura uma vila natural perto do spawn (sino); 2) tenta gerar uma vila do jogo com /place;
+// 3) se nada der certo, constrói a vila do SECRET OP (casas, poço, sino, fazenda, biblioteca, ferreiro).
+const SOLID_SKIP = /(air|leaves|log|vine|tallgrass|short_grass|tall_grass|fern|flower|snow_layer|double_plant|sapling|bush|water|kelp|seagrass)/;
+
+function groundY(dim, x, z) {
   try {
-    const b = dim.getBlock(loc); if (!b) return;
-    cmd(dim, `setblock ${loc.x} ${loc.y} ${loc.z} standing_sign${facingNorth ? ' ["ground_sign_direction"=8]' : ''}`);
-    b.getComponent('minecraft:sign')?.setText(text);
+    const top = dim.getTopmostBlock({ x, z });
+    if (!top) return undefined;
+    let y = top.location.y;
+    for (let i = 0; i < 40; i++) {
+      const b = dim.getBlock({ x, y, z });
+      if (!b) return undefined;
+      if (!SOLID_SKIP.test(b.typeId)) return y + 1;
+      y--;
+    }
+    return top.location.y + 1;
+  } catch { return undefined; }
+}
+
+function findBell(dim, center, radius, done) {
+  const tiles = [];
+  for (let dx = -radius; dx < radius; dx += 16) for (let dz = -radius; dz < radius; dz += 16) tiles.push([dx, dz]);
+  tiles.sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
+  let i = 0;
+  const h = system.runInterval(() => {
+    for (let k = 0; k < 4 && i < tiles.length; k++, i++) {
+      const [dx, dz] = tiles[i];
+      const from = { x: center.x + dx, y: center.y - 20, z: center.z + dz };
+      const to = { x: center.x + dx + 15, y: center.y + 30, z: center.z + dz + 15 };
+      try {
+        const vol = new BlockVolume(from, to);
+        if (dim.containsBlock(vol, { includeTypes: ['minecraft:bell'] })) {
+          const it = dim.getBlocks(vol, { includeTypes: ['minecraft:bell'] }).getBlockLocationIterator();
+          const r = it.next();
+          if (!r.done) { system.clearRun(h); done(r.value); return; }
+        }
+      } catch { /* chunk não carregado */ }
+    }
+    if (i >= tiles.length) { system.clearRun(h); done(undefined); }
+  }, 1);
+}
+
+function setupVillage(p) {
+  if (S.phase !== 'setup' || S.settingUp) return;
+  S.settingUp = true;
+  const dim = overworld();
+  const cx = Math.floor(p.location.x), cz = Math.floor(p.location.z);
+  const gy = groundY(dim, cx, cz) ?? Math.floor(p.location.y);
+  title(p, '§dSECRET OP', '§7Preparando a vila...', 80);
+  findBell(dim, { x: cx, y: gy, z: cz }, 64, (bell) => {
+    if (bell) return useVillage({ x: bell.x, y: bell.y, z: bell.z }, 'natural');
+    const placed = ['village_plains', 'minecraft:village_plains'].some((n) => cmd(dim, `place structure ${n} ${cx} ${gy} ${cz}`));
+    if (!placed) return useVillage(buildVillage(dim, cx, gy, cz), 'construída');
+    system.runTimeout(() => findBell(dim, { x: cx, y: gy, z: cz }, 48, (b2) => {
+      useVillage(b2 ? { x: b2.x, y: b2.y, z: b2.z } : buildVillage(dim, cx, gy, cz), b2 ? 'gerada' : 'construída');
+    }), 40);
+  });
+}
+
+function useVillage(center, kind) {
+  const dim = overworld();
+  const y = groundY(dim, center.x + 2, center.z + 2) ?? center.y;
+  S.village = { x: center.x + 2, y, z: center.z + 2, kind };
+  S.settingUp = false;
+  try { world.setDefaultSpawnLocation({ x: S.village.x, y: S.village.y, z: S.village.z }); } catch { /* */ }
+  if (kind !== 'construída') populate(dim, center, 0);
+  beginIntro();
+}
+
+function toVillage(p) {
+  const v = S.village; if (!v) return;
+  try {
+    p.teleport({ x: v.x + 0.5 + (Math.random() * 4 - 2), y: v.y + 0.2, z: v.z + 0.5 + (Math.random() * 4 - 2) }, { dimension: overworld() });
+    effect(p, 'resistance', 100, 4);
   } catch { /* */ }
 }
 
-function showcase(dim, cx, y, cz) {
-  try { for (const e of dim.getEntities({ tags: [NS + 'showcase'] })) e.remove(); } catch { /* */ }
-  const stands = [
-    { dx: -9, dz: -2, name: '§5Conjunto Syntaxium', head: 'syntaxium_helmet', chest: 'syntaxium_chestplate', legs: 'netherite_leggings', feet: 'syntaxium_boots', hand: 'syntaxium_sword' },
-    { dx: -9, dz: 2, name: '§cTNT Cowl', head: 'tnt_cowl', chest: 'creeper_shirt', hand: 'heavy_syntaxium_sword' },
-    { dx: -9, dz: 6, name: '§8Katana de Netherita', hand: 'netherite_katana', chest: 'syntaxium_chestplate' },
-    { dx: 9, dz: -2, name: '§fHK G3 Battle Rifle', hand: 'hk_g3_rifle', head: 'syntaxium_helmet' },
-    { dx: 9, dz: 2, name: '§bLaser Blade', hand: 'laser_blade', feet: 'syntaxium_boots' },
-    { dx: 9, dz: 6, name: '§5Katana de Yami', hand: 'yami_katana', legs: 'netherite_leggings' },
-  ];
-  for (const s of stands) {
-    try {
-      const e = dim.spawnEntity('minecraft:armor_stand', { x: cx + s.dx + 0.5, y, z: cz + s.dz + 0.5 });
-      e.addTag(NS + 'showcase'); e.nameTag = s.name;
-      e.setRotation({ x: 0, y: s.dx < 0 ? -90 : 90 });
-      const put = (slot, key) => key && cmd(e, `replaceitem entity @s ${slot} 0 ${NS}${key}`);
-      put('slot.armor.head', s.head); put('slot.armor.chest', s.chest); put('slot.armor.legs', s.legs);
-      put('slot.armor.feet', s.feet); put('slot.weapon.mainhand', s.hand);
-    } catch { /* */ }
-  }
+function populate(dim, c, gy) {
+  const y = gy || c.y;
+  const spawn = (id, dx, dz, name) => { try { const e = dim.spawnEntity(id, { x: c.x + dx + 0.5, y: y + 0.2, z: c.z + dz + 0.5 }); if (name) e.nameTag = name; } catch { /* */ } };
+  for (const [dx, dz] of [[4, 3], [-4, 3], [3, -4], [-3, -5], [6, 0], [-6, 1]]) spawn('minecraft:villager_v2', dx, dz);
+  spawn('minecraft:iron_golem', 0, 7);
+  spawn('minecraft:cat', 5, 5); spawn('minecraft:cat', -5, -6);
+  for (const [dx, dz] of [[-9, 9], [-11, 10], [-8, 12]]) spawn('minecraft:chicken', dx, dz);
 }
 
-function buildArena(dim) {
-  const C = arenaCenter(); if (!C) return false;
-  if (!dim.getBlock({ x: C.x, y: C.y, z: C.z })) return false;
-  const R = ARENA_RADIUS + 2, y = C.y;
+function buildVillage(dim, cx, gy, cz) {
   const F = (x1, y1, z1, x2, y2, z2, b) => cmd(dim, `fill ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} ${b}`);
-  for (let dz = -R; dz <= R; dz++) {
-    const w = Math.floor(Math.sqrt(R * R - dz * dz));
-    F(C.x - w, y - 6, C.z + dz, C.x + w, y + 8, C.z + dz, 'air');
-    F(C.x - w, y - 3, C.z + dz, C.x + w, y - 3, C.z + dz, 'stone');
-    F(C.x - w, y - 2, C.z + dz, C.x + w, y - 2, C.z + dz, 'dirt');
-    F(C.x - w, y - 1, C.z + dz, C.x + w, y - 1, C.z + dz, 'grass_block');
+  const B = (x, y, z, ...opts) => opts.some((b) => cmd(dim, `setblock ${x} ${y} ${z} ${b}`));
+  const R = 28;
+  // terreno plano
+  for (const [a, b] of [[0, 7], [8, 15], [16, 23]]) F(cx - R, gy + a, cz - R, cx + R, gy + b, cz + R, 'air');
+  F(cx - R, gy - 4, cz - R, cx + R, gy - 2, cz + R, 'dirt');
+  F(cx - R, gy - 1, cz - R, cx + R, gy - 1, cz + R, 'grass_block');
+  // ruas em cruz
+  F(cx - R, gy - 1, cz - 1, cx + R, gy - 1, cz + 1, 'grass_path');
+  F(cx - 1, gy - 1, cz - R, cx + 1, gy - 1, cz + R, 'grass_path');
+  // praça e poço
+  F(cx - 4, gy - 1, cz - 4, cx + 4, gy - 1, cz + 4, 'grass_path');
+  F(cx - 2, gy - 4, cz - 2, cx + 2, gy, cz + 2, 'cobblestone');
+  F(cx - 1, gy - 3, cz - 1, cx + 1, gy - 1, cz + 1, 'water');
+  F(cx - 1, gy, cz - 1, cx + 1, gy, cz + 1, 'air');
+  for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) F(cx + dx, gy + 1, cz + dz, cx + dx, gy + 2, cz + dz, 'oak_fence');
+  F(cx - 2, gy + 3, cz - 2, cx + 2, gy + 3, cz + 2, 'cobblestone');
+  B(cx, gy + 4, cz, 'lantern');
+  // sino da vila (pista "Salvo pelo...")
+  B(cx + 4, gy - 1, cz + 4, 'polished_andesite');
+  B(cx + 4, gy, cz + 4, 'bell ["attachment"="standing"]', 'bell');
+  // postes de luz
+  for (const [dx, dz] of [[8, 3], [-8, -3], [16, -3], [-16, 3], [3, 10], [-3, -10], [3, -18], [-3, 18], [22, 3], [-22, -3]]) {
+    F(cx + dx, gy, cz + dz, cx + dx, gy + 2, cz + dz, 'oak_fence');
+    B(cx + dx, gy + 3, cz + dz, 'lantern');
   }
-  for (let a = 0; a < 360; a += 2) {
-    const x = Math.round(C.x + Math.cos(a * Math.PI / 180) * R), z = Math.round(C.z + Math.sin(a * Math.PI / 180) * R);
-    F(x, y - 1, z, x, y + 3, z, 'red_stained_glass');
+  // casas: [x0, z0, x1, z1, porta ('S' ou 'N'), tipo, parede, telhado]
+  const houses = [
+    [6, -15, 14, -8, 'S', 'biblioteca', 'oak_planks', 'dark_oak_planks'],
+    [-14, -15, -6, -8, 'S', 'ferreiro', 'cobblestone', 'stone_bricks'],
+    [17, -13, 23, -7, 'S', 'casa', 'birch_planks', 'spruce_planks'],
+    [-23, -13, -17, -7, 'S', 'casa', 'spruce_planks', 'dark_oak_planks'],
+    [6, 8, 12, 14, 'N', 'casa', 'oak_planks', 'spruce_planks'],
+    [16, 8, 22, 14, 'N', 'casa', 'birch_planks', 'dark_oak_planks'],
+  ];
+  const chests = [];
+  for (const [ax0, az0, ax1, az1, door, type, wall, roof] of houses) {
+    const x0 = cx + ax0, z0 = cz + az0, x1 = cx + ax1, z1 = cz + az1, h = 4;
+    F(x0, gy - 1, z0, x1, gy - 1, z1, 'cobblestone');
+    F(x0 + 1, gy - 1, z0 + 1, x1 - 1, gy - 1, z1 - 1, type === 'ferreiro' ? 'stone_bricks' : 'oak_planks');
+    F(x0, gy, z0, x1, gy + h - 1, z1, wall);
+    F(x0 + 1, gy, z0 + 1, x1 - 1, gy + h - 1, z1 - 1, 'air');
+    for (const [x, z] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) F(x, gy, z, x, gy + h - 1, z, 'oak_log');
+    F(x0, gy + h - 1, z0, x1, gy + h - 1, z0, 'stripped_oak_log'); F(x0, gy + h - 1, z1, x1, gy + h - 1, z1, 'stripped_oak_log');
+    // janelas
+    const mz = Math.floor((z0 + z1) / 2), mx = Math.floor((x0 + x1) / 2);
+    F(x0, gy + 1, mz, x0, gy + 2, mz, 'glass_pane'); F(x1, gy + 1, mz, x1, gy + 2, mz, 'glass_pane');
+    const back = door === 'S' ? z0 : z1, front = door === 'S' ? z1 : z0;
+    F(mx - 2, gy + 1, back, mx - 2, gy + 2, back, 'glass_pane'); F(mx + 2, gy + 1, back, mx + 2, gy + 2, back, 'glass_pane');
+    B(mx - 2, gy + 1, front, 'glass_pane'); B(mx + 2, gy + 1, front, 'glass_pane');
+    // telhado em degraus
+    for (let i = 0; ; i++) {
+      const a = x0 - 1 + i, b = x1 + 1 - i, c = z0 - 1 + i, d = z1 + 1 - i;
+      if (a > b || c > d) break;
+      F(a, gy + h + i, c, b, gy + h + i, d, roof);
+      if (a + 1 <= b - 1 && c + 1 <= d - 1) F(a + 1, gy + h + i, c + 1, b - 1, gy + h + i, d - 1, i === 0 ? 'air' : roof);
+    }
+    F(x0 + 1, gy + h, z0 + 1, x1 - 1, gy + h, z1 - 1, wall === 'cobblestone' ? 'stone_bricks' : 'oak_planks');
+    // porta e caminho até a rua
+    F(mx, gy, front, mx, gy + 1, front, 'air');
+    const dir = door === 'S' ? 'south' : 'north', dnum = door === 'S' ? 1 : 3;
+    B(mx, gy, front, `oak_door ["minecraft:cardinal_direction"="${dir}","upper_block_bit"=false]`, `oak_door ["direction"=${dnum},"upper_block_bit"=false]`);
+    B(mx, gy + 1, front, `oak_door ["minecraft:cardinal_direction"="${dir}","upper_block_bit"=true]`, `oak_door ["direction"=${dnum},"upper_block_bit"=true]`);
+    const step = door === 'S' ? 1 : -1;
+    for (let z = front + step; Math.abs(z - cz) > 1; z += step) B(mx, gy - 1, z, 'grass_path');
+    B(mx + 1, gy + 2, front + step, 'lantern');
+    B(mx + 1, gy + 1, front + step, 'oak_fence'); B(mx + 1, gy, front + step, 'oak_fence');
+    // interior
+    const ix0 = x0 + 1, ix1 = x1 - 1, iz0 = z0 + 1, iz1 = z1 - 1;
+    const backIn = door === 'S' ? iz0 : iz1;
+    B(mx, gy + 3, Math.floor((iz0 + iz1) / 2), 'lantern ["hanging"=true]', 'lantern');
+    if (type === 'biblioteca') {
+      F(ix0, gy, backIn, ix1, gy + 1, backIn, 'bookshelf');
+      F(ix0, gy, iz0, ix0, gy + 1, iz1, 'bookshelf');
+      B(mx, gy, Math.floor((iz0 + iz1) / 2), 'lectern');
+      B(mx + 1, gy, Math.floor((iz0 + iz1) / 2), 'redstone_lamp');
+      chests.push({ x: ix1, y: gy, z: backIn, items: [['minecraft:writable_book', 1], ['minecraft:book', 3], ['minecraft:paper', 6]] });
+    } else if (type === 'ferreiro') {
+      B(ix0, gy, backIn, 'smithing_table'); B(ix0 + 1, gy, backIn, 'furnace'); B(ix0 + 2, gy, backIn, 'furnace');
+      B(ix1, gy, backIn, 'anvil'); B(ix1, gy, iz0 + 2, 'blast_furnace');
+      chests.push({ x: ix1 - 1, y: gy, z: backIn, items: [['minecraft:iron_ingot', 6], ['minecraft:iron_pickaxe', 1], ['minecraft:coal', 8]] });
+    } else {
+      B(ix0, gy, backIn, 'crafting_table'); B(ix0 + 1, gy, backIn, 'barrel'); B(ix1, gy, backIn, 'flower_pot');
+      B(ix1, gy, backIn + (door === 'S' ? 1 : -1), 'composter');
+      chests.push({ x: ix0 + 2, y: gy, z: backIn, items: [['minecraft:bread', 6], ['minecraft:carrot', 8], ['minecraft:apple', 3]] });
+    }
   }
-  // lago (no vídeo, alguém cai na água com a borda encolhendo)
-  F(C.x + 6, y - 2, C.z + 4, C.x + 10, y - 1, C.z + 7, 'water');
-  // coberturas
-  F(C.x - 12, y, C.z - 4, C.x - 12, y + 2, C.z + 4, 'cobblestone');
-  F(C.x + 14, y, C.z - 6, C.x + 14, y + 2, C.z - 1, 'mossy_stone_bricks');
-  F(C.x - 4, y, C.z - 14, C.x + 4, y + 1, C.z - 14, 'stone_bricks');
-  F(C.x - 3, y, C.z + 15, C.x + 3, y + 2, C.z + 15, 'oak_planks');
-  // torre central
-  F(C.x - 1, y, C.z - 1, C.x + 1, y + 4, C.z + 1, 'polished_deepslate');
-  F(C.x - 2, y + 5, C.z - 2, C.x + 2, y + 5, C.z + 2, 'polished_blackstone_bricks');
-  F(C.x, y + 5, C.z, C.x, y + 5, C.z, 'sea_lantern');
-  // árvores
-  for (const [tx, tz] of [[-18, 10], [17, -12], [-15, -16]]) {
-    F(C.x + tx - 2, y + 3, C.z + tz - 2, C.x + tx + 2, y + 5, C.z + tz + 2, 'oak_leaves');
-    F(C.x + tx, y, C.z + tz, C.x + tx, y + 4, C.z + tz, 'oak_log');
-  }
-  S.arenaBuilt = true; save();
-  return true;
+  for (const c of chests) B(c.x, c.y, c.z, 'chest');
+  // fazenda
+  const fx0 = cx - 21, fz0 = cz + 6, fx1 = cx - 7, fz1 = cz + 15;
+  F(fx0, gy - 1, fz0, fx1, gy - 1, fz1, 'oak_log');
+  F(fx0 + 1, gy - 1, fz0 + 1, fx1 - 1, gy - 1, fz1 - 1, 'farmland');
+  F(fx0 + 1, gy - 1, Math.floor((fz0 + fz1) / 2), fx1 - 1, gy - 1, Math.floor((fz0 + fz1) / 2), 'water');
+  F(fx0 + 1, gy, fz0 + 1, fx1 - 1, gy, Math.floor((fz0 + fz1) / 2) - 1, 'wheat ["growth"=7]');
+  F(fx0 + 1, gy, Math.floor((fz0 + fz1) / 2) + 1, fx1 - 1, gy, fz1 - 1, 'carrots ["growth"=7]');
+  for (const [x, z] of [[fx0, fz0], [fx1, fz0], [fx0, fz1], [fx1, fz1]]) B(x, gy, z, 'hay_block');
+  B(fx1 + 1, gy, fz0, 'composter');
+  // abóboras perto da fazenda (pista da abóbora esculpida)
+  for (const [dx, dz] of [[-24, 8], [-24, 10], [-25, 13]]) B(cx + dx, gy, cz + dz, 'pumpkin');
+  system.runTimeout(() => {
+    for (const c of chests) {
+      try {
+        const inv2 = dim.getBlock({ x: c.x, y: c.y, z: c.z })?.getComponent('minecraft:inventory')?.container;
+        c.items.forEach(([id, n], i) => inv2?.setItem(i * 2, new ItemStack(id, n)));
+      } catch { /* */ }
+    }
+    signs(dim, cx, gy, cz);
+    populate(dim, { x: cx, y: gy, z: cz }, gy);
+  }, 10);
+  return { x: cx, y: gy, z: cz };
 }
 
-function ensureWorld(p) {
-  const dim = world.getDimension('overworld');
-  if (!S.lobby) {
-    const cx = Math.floor(p.location.x), cz = Math.floor(p.location.z);
-    S.lobby = { x: cx, z: cz }; save();
-    buildLobby(dim, cx, cz);
-    try { world.setDefaultSpawnLocation({ x: cx, y: LOBBY_Y, z: cz }); } catch { /* */ }
-    cmd(dim, `tickingarea add circle ${cx} ${LOBBY_Y} ${cz + ARENA_OFFSET_Z} 3 secretop_arena`);
-    cmd(dim, `gamerule keepinventory ${S.settings.keepInv ? 'true' : 'false'}`);
-    let tries = 0;
-    const h = system.runInterval(() => {
-      tries++;
-      if (buildArena(dim) || tries > 30) system.clearRun(h);
-    }, 40);
-  }
+function signs(dim, cx, gy, cz) {
+  const put = (x, z, text, rot) => {
+    try {
+      cmd(dim, `setblock ${x} ${gy} ${z} standing_sign ["ground_sign_direction"=${rot}]`) || cmd(dim, `setblock ${x} ${gy} ${z} standing_sign`);
+      dim.getBlock({ x, y: gy, z })?.getComponent('minecraft:sign')?.setText(text);
+    } catch { /* */ }
+  };
+  put(cx - 4, cz - 4, '§l§dSECRET OP§r\n§f25 min de preparo\n§fdepois: §cLUTA\n§cFINAL', 6);
+  put(cx + 4, cz - 4, '§6PISTAS§r\nQuebre o bloco\nou derrote o mob\nda resposta', 10);
+  put(cx - 4, cz + 4, '§bDROPS OP§r\nsaltam de quem\nacertar primeiro!', 2);
 }
 
 // ------------------------------------------------------------------ ARMAS DE FOGO
 const GUNS = {
-  'secretop:hk_g3_rifle': { name: 'HK G3 Battle Rifle', mag: 31, dmg: 8, range: 80, delay: 4, auto: true, spread: 0.012, pellets: 1, sound: 'secretop.gun.rifle', reload: 40 },
-  'secretop:combat_pistol': { name: 'Tactical Pistol', mag: 12, dmg: 7, range: 45, delay: 5, auto: false, spread: 0.01, pellets: 1, sound: 'secretop.gun.pistol', reload: 25 },
-  'secretop:scatter_shotgun': { name: 'Secret Shotgun', mag: 6, dmg: 4, range: 22, delay: 16, auto: false, spread: 0.11, pellets: 7, sound: 'secretop.gun.shotgun', reload: 45 },
-  'secretop:m700_sniper': { name: 'M700 Sniper Rifle', mag: 5, dmg: 24, range: 150, delay: 30, auto: false, spread: 0, pellets: 1, sound: 'secretop.gun.sniper', reload: 55 },
+  'secretop:hk_g3_rifle': { name: 'Fuzil HK G3', mag: 31, dmg: 8, range: 80, delay: 4, auto: true, spread: 0.012, pellets: 1, sound: 'secretop.gun.rifle', reload: 40 },
+  'secretop:combat_pistol': { name: 'Pistola Tática', mag: 12, dmg: 7, range: 45, delay: 5, auto: false, spread: 0.01, pellets: 1, sound: 'secretop.gun.pistol', reload: 25 },
+  'secretop:scatter_shotgun': { name: 'Escopeta Secreta', mag: 6, dmg: 4, range: 22, delay: 16, auto: false, spread: 0.11, pellets: 7, sound: 'secretop.gun.shotgun', reload: 45 },
+  'secretop:m700_sniper': { name: 'Fuzil M700', mag: 5, dmg: 24, range: 150, delay: 30, auto: false, spread: 0, pellets: 1, sound: 'secretop.gun.sniper', reload: 55 },
 };
 const ammo = new Map();      // playerId -> { gunId: balas }
 const reloading = new Map(); // playerId -> { gun, until }
@@ -679,12 +737,13 @@ function shoot(p, g) {
     let target; let tDist = maxD;
     try {
       const hits = dim.getEntitiesFromRay(head, dir, { maxDistance: maxD, excludeTypes: ['minecraft:item', 'minecraft:xp_orb', 'minecraft:arrow'], excludeGameModes: [GameMode.Spectator, GameMode.Creative] });
-      const h = hits.find((x) => x.entity.id !== p.id && !x.entity.hasTag(NS + 'showcase') && x.entity.typeId !== 'secretop:op_allay');
+      const h = hits.find((x) => x.entity.id !== p.id && x.entity.typeId !== 'secretop:op_allay');
       if (h) { target = h.entity; tDist = h.distance; }
     } catch { /* */ }
     // rastro da bala
     const steps = Math.min(24, Math.floor(tDist / 1.5));
     for (let s = 1; s <= steps; s += (g.pellets > 1 ? 2 : 1)) fx(dim, 'secretop:bullet_trail', { x: head.x + dir.x * s * 1.5, y: head.y + dir.y * s * 1.5 - 0.1, z: head.z + dir.z * s * 1.5 });
+    if (target && target.typeId === 'minecraft:player' && S.phase !== 'fight') target = undefined; // sem PvP no preparo
     if (target) {
       const hitY = head.y + dir.y * tDist;
       let head2 = false;
@@ -728,19 +787,10 @@ function onUseItem(p, stack) {
   if (GUNS[id]) { triggerGun(p, id, false); return; }
   const key = id.slice(NS.length);
   if (!ready(p, 'use:' + key, 6)) return;
-  switch (key) {
-    case 'clue_remote': openMenu(p); break;
-    case 'clue_book': openDiary(p); break;
-    case 'totem_boost': useTotem(p); break;
-    case 'allay_whistle': summonAllay(p); break;
-    case 'netherite_katana': katanaDash(p); break;
-    case 'ammo_box': {
-      const h = Object.keys(GUNS).find((g) => countItem(p, g) > 0);
-      tell(p, h ? '§7Segure a arma e use §fAGACHAR + USAR §7para recarregar.' : '§7Você ainda não tem uma arma de fogo.');
-      break;
-    }
-    default: break;
-  }
+  if (key === 'totem_boost') useTotem(p);
+  else if (key === 'allay_whistle') summonAllay(p);
+  else if (key === 'netherite_katana') katanaDash(p);
+  else if (key === 'ammo_box') tell(p, '§7Segure a arma e use §fAGACHAR + USAR §7para recarregar.');
 }
 
 function useTotem(p) {
@@ -787,6 +837,7 @@ function onEat(p, stack) {
 // ------------------------------------------------------------------ CORPO A CORPO
 function onMelee(attacker, target) {
   if (attacker.typeId !== 'minecraft:player') return;
+  if (target.typeId === 'minecraft:player' && S.phase !== 'fight') return; // sem PvP durante o preparo
   const id = heldItem(attacker)?.typeId; if (!id?.startsWith(NS)) return;
   const dim = target.dimension;
   let at; try { at = { x: target.location.x, y: target.location.y + 1, z: target.location.z }; } catch { return; }
@@ -860,57 +911,7 @@ function armorSecond() {
       const c = inv(p);
       for (let i = 0; !carry && c && i < 9; i++) if (c.getItem(i)?.typeId === NS + 'totem_boost') carry = true;
       if (carry) effect(p, 'health_boost', 100, 1);
-      // lobby: sem fome nem dano
-      if (S.lobby && inLobby(p.location)) { effect(p, 'saturation', 40, 0); effect(p, 'resistance', 40, 4); }
     } catch { /* */ }
-  }
-}
-
-// ------------------------------------------------------------------ HUD (barra de ação acima da hotbar)
-function bar(pct, size = 20) {
-  const f = Math.round(pct * size);
-  return '§a' + '-'.repeat(f) + '§8' + '-'.repeat(size - f);
-}
-function hud() {
-  for (const p of players()) {
-    const lines = [];
-    const it = heldItem(p); const g = it && GUNS[it.typeId];
-    if (g) {
-      const r = reloading.get(p.id);
-      if (r) {
-        const pr = (tick() - r.start) / Math.max(1, r.until - r.start);
-        lines.push(`§e${g.name}  §fRECARREGANDO ${bar(pr, 10)}`);
-      } else {
-        const n = getAmmo(p, it.typeId);
-        lines.push(`§7▬▬ §f${g.name}  §l${n <= Math.ceil(g.mag / 4) ? '§c' : '§f'}${String(n).padStart(3, '0')}§r§7/${g.mag}  §8| §6${countItem(p, NS + 'ammo_box')} caixas`);
-      }
-    }
-    const tu = totemUntil.get(p.id);
-    if (tu && tu > tick()) lines.push(`§c✚ Totem Boost V §f${mmss((tu - tick()) / 20)}`);
-    const c = currentClue();
-    if (S.phase === 'clue' && c) {
-      lines.push(`§6§lCLUE: §r§f${c.riddle} §7${mmss(S.timeLeft)}`);
-      if (S.timeLeft <= S.total / 2) lines.push(`§8Dica: §7${c.hint}`);
-    } else if (S.phase === 'intermission') {
-      const pct = 1 - S.timeLeft / Math.max(1, S.total);
-      lines.push(`§6§lNEXT CLUE: ${bar(pct)} §f${Math.round(pct * 100)}%`);
-    } else if (S.phase === 'countdown') {
-      lines.push(`§fDeathmatch: §c§l${S.timeLeft}`);
-    } else if (S.phase === 'deathmatch') {
-      const alive = players().filter((q) => S.alive.includes(q.id)).length;
-      lines.push(`§c§lDEATHMATCH §r§7| §eBorda: ${borderRadius()} §7| §f${S.solo ? 'Guardiões' : alive + ' vivos'} §7| ${mmss(S.timeLeft)}`);
-    }
-    if (lines.length) { try { p.onScreenDisplay.setActionBar(lines.join('\n')); } catch { /* */ } }
-  }
-}
-
-function borderParticles() {
-  if (S.phase !== 'deathmatch') return;
-  const C = arenaCenter(); if (!C) return;
-  const dim = world.getDimension('overworld'); const r = borderRadius();
-  for (let i = 0; i < 64; i++) {
-    const a = (i / 64) * Math.PI * 2;
-    for (const dy of [0.5, 1.6]) fx(dim, 'secretop:border_wall', { x: C.x + 0.5 + Math.cos(a) * r, y: C.y + dy, z: C.z + 0.5 + Math.sin(a) * r });
   }
 }
 
@@ -950,93 +951,45 @@ function allayTick() {
   }
 }
 
-// ------------------------------------------------------------------ MENUS (Controle do Desafio)
-const PHASE_NAME = { idle: '§7Aguardando', intermission: '§eNEXT CLUE', clue: '§6Pista ativa', countdown: '§cDeathmatch em breve', deathmatch: '§cDEATHMATCH', finished: '§6Fim de jogo' };
-
-function openMenu(p) {
-  const c = currentClue();
-  let body = `§fEstado: ${PHASE_NAME[S.phase] ?? S.phase}\n`;
-  if (S.order.length && S.phase !== 'idle') body += `§fPista: §e${Math.min(S.pos + 1, S.order.length)}/${S.order.length}\n`;
-  if (S.phase === 'clue' && c) body += `\n§6§lCLUE: §r§f${c.riddle}\n§7Tempo: ${mmss(S.timeLeft)}\n`;
-  body += `\n§7Config: ${S.settings.count} pistas • ${S.settings.clueMin} min cada • Deathmatch ${S.settings.dmSecs}s`;
-  const f = new ActionFormData().title('§l§dSECRET OP §r§8- Controle').body(body);
-  const actions = [];
-  const add = (label, icon, fn) => { f.button(label, icon); actions.push(fn); };
-  if (S.phase === 'idle' || S.phase === 'finished') {
-    add('§a§l▶ INICIAR DESAFIO', 'textures/secretop/items/clue_remote', () => startChallenge(p));
-    add('§0Configurações', 'textures/secretop/items/clue_book', () => openSettings(p));
-  } else if (S.phase === 'clue' || S.phase === 'intermission') {
-    if (S.phase === 'clue' && S.settings.training) add('§0Treino: criar o alvo perto de mim', 'textures/secretop/items/allay_whistle', () => trainingTarget(p));
-    add('§0Pular esta pista', 'textures/secretop/items/ammo_box', () => { if (S.phase === 'clue') expireClue(); else { S.timeLeft = 1; } });
-    add('§c§lIniciar Deathmatch agora', 'textures/secretop/items/hk_g3_rifle', () => { S.phase = 'countdown'; S.total = 30; S.timeLeft = 30; save(); say('§e30 segundos até o Deathmatch, preparem-se!'); });
+// ------------------------------------------------------------------ HUD (acima da hotbar)
+function bar(pct, size = 20) {
+  const f = Math.round(pct * size);
+  return '§a' + '|'.repeat(f) + '§8' + '|'.repeat(size - f);
+}
+function hud() {
+  for (const p of players()) {
+    const lines = [];
+    const it = heldItem(p); const g = it && GUNS[it.typeId];
+    if (g) {
+      const r = reloading.get(p.id);
+      if (r) lines.push(`§e${g.name}  §fRECARREGANDO ${bar((tick() - r.start) / Math.max(1, r.until - r.start), 10)}`);
+      else {
+        const n = getAmmo(p, it.typeId);
+        lines.push(`§7▬▬ §f${g.name}  §l${n <= Math.ceil(g.mag / 4) ? '§c' : '§f'}${String(n).padStart(3, '0')}§r§7/${g.mag}  §8| §6${countItem(p, NS + 'ammo_box')} caixas`);
+      }
+    }
+    const tu = totemUntil.get(p.id);
+    if (tu && tu > tick()) lines.push(`§c✚ Totem Boost V §f${mmss((tu - tick()) / 20)}`);
+    if (S.phase === 'setup') lines.push('§7Preparando a vila...');
+    else if (S.phase === 'intro') lines.push(`§dSECRET OP §7• começa em §f${S.introLeft}s`);
+    else if (S.phase === 'prep') {
+      const c = S.clue;
+      lines.push(`§e⏳ PREPARO §f§l${mmss(S.prepLeft)}§r §7• pista ${Math.min(c.pos + 1, CLUES.length)}/${CLUES.length}`);
+      if (c.mode === 'clue') {
+        lines.push(`§6§lPISTA: §r§f${CLUES[c.pos].riddle} §7${mmss(c.left)}`);
+        if (c.left <= c.total / 2) lines.push(`§8Dica: §7${CLUES[c.pos].hint}`);
+      } else if (c.mode === 'gap') {
+        const pct = 1 - c.left / Math.max(1, c.total);
+        lines.push(`§6§lPRÓXIMA PISTA: ${bar(pct)} §f${Math.round(pct * 100)}%`);
+      } else lines.push('§7Sem mais pistas — prepare-se para a §cLUTA FINAL');
+    } else if (S.phase === 'fight') {
+      const alive = players().filter((q) => S.alive.includes(q.id)).length;
+      lines.push(S.solo ? `§c§lLUTA FINAL §r§7• §fOnda ${Math.max(1, S.wave)}/${SOLO_WAVES} §7• sem área` : `§c§lLUTA FINAL §r§7• §f${alive} vivos §7• sem área`);
+    } else if (S.phase === 'finished') {
+      lines.push(S.winner ? `§6§lVENCEDOR: ${S.winner}` : '§7Fim de jogo');
+    }
+    if (lines.length) { try { p.onScreenDisplay.setActionBar(lines.join('\n')); } catch { /* */ } }
   }
-  if (inLobby(p.location)) add('§0Descer para o mundo', 'textures/secretop/items/syntaxium_boots', () => dropToWorld(p));
-  else if (S.phase !== 'deathmatch' && S.phase !== 'countdown') add('§0Ir para o lobby', 'textures/secretop/items/totem_boost', () => goLobby(p));
-  add('§0Como jogar', 'textures/secretop/items/clue_book', () => howTo(p));
-  if (S.phase !== 'idle') add('§4Encerrar desafio', 'textures/secretop/items/tnt_cowl', () => { say(`§7${p.name} encerrou o desafio.`); resetToLobby(); });
-  f.show(p).then((r) => {
-    if (r.canceled || r.selection === undefined) return;
-    try { actions[r.selection]?.(); } catch { /* */ }
-  }).catch(() => { /* */ });
-}
-
-function openSettings(p) {
-  const st = S.settings; const counts = [8, 12, 16, 22];
-  new ModalFormData().title('§l§dSECRET OP §r§8- Configurações')
-    .dropdown('Número de pistas', ['8 (rápido)', '12 (normal)', '16', '22 (todas, como no vídeo)'], { defaultValueIndex: Math.max(0, counts.indexOf(st.count)) })
-    .slider('Tempo por pista (minutos)', 2, 10, { defaultValue: st.clueMin, valueStep: 1 })
-    .slider('Intervalo NEXT CLUE (segundos)', 10, 60, { defaultValue: st.gapSecs, valueStep: 5 })
-    .slider('Duração do Deathmatch (segundos)', 90, 300, { defaultValue: st.dmSecs, valueStep: 30 })
-    .toggle('Manter inventário ao morrer', { defaultValue: st.keepInv })
-    .toggle('Permitir "Treino" (criar o alvo perto)', { defaultValue: st.training })
-    .show(p).then((r) => {
-      if (r.canceled || !r.formValues) return;
-      const v = r.formValues;
-      S.settings = { count: counts[Number(v[0])] ?? 12, clueMin: Number(v[1]), gapSecs: Number(v[2]), dmSecs: Number(v[3]), keepInv: !!v[4], training: !!v[5] };
-      save(); cmd(world.getDimension('overworld'), `gamerule keepinventory ${S.settings.keepInv ? 'true' : 'false'}`);
-      tell(p, '§aConfigurações salvas.');
-    }).catch(() => { /* */ });
-}
-
-function openDiary(p) {
-  let body = '';
-  if (!S.log.length && S.phase === 'idle') body = '§7Nenhuma pista ainda. Use o §dControle do Desafio §7para começar.';
-  S.log.forEach((e, n) => {
-    const c = CLUES[e.i];
-    body += `§e${n + 1}. §fCLUE: ${c.riddle}\n   §7→ §d${c.answer} ${e.by ? `§7(por §a${e.by}§7)` : '§8(ninguém)'}\n`;
-  });
-  const c = currentClue();
-  if (S.phase === 'clue' && c) body += `\n§6§lAGORA: §r§f${c.riddle}\n§7Tempo restante: ${mmss(S.timeLeft)}${S.timeLeft <= S.total / 2 ? `\n§8Dica: §7${c.hint}` : ''}`;
-  new ActionFormData().title('§l§5Diário de Pistas').body(body || ' ').button('Fechar').show(p).catch(() => { /* */ });
-}
-
-function howTo(p) {
-  new ActionFormData().title('§l§dComo jogar').body([
-    '§e1.§f Uma §6CLUE§f aparece acima da hotbar. Descubra o bloco ou mob.',
-    '§e2.§f Quebre o bloco (ou derrote o mob). Allay, gato, axolote e atril: interagir também vale.',
-    '§e3.§f Quem resolver primeiro faz os §dDROPS OP§f saltarem do lugar!',
-    '§e4.§f Se o tempo acabar, a resposta é revelada e vem a próxima (barra §6NEXT CLUE§f).',
-    '§e5.§f Na metade do tempo aparece uma §8Dica§f.',
-    '§e6.§f Depois da última pista: 30 s e começa o §cDeathmatch§f com borda que encolhe.',
-    '',
-    '§7Armas: SEGURE USAR para atirar. AGACHAR + USAR recarrega (gasta 1 Caixa de Munição).',
-    '§7Totem Boost V: carregue para +4 corações; USE para 45 s de buffs.',
-    '§7Katana de Netherita: USAR = investida. Machado Syntaxium derruba a árvore toda.',
-  ].join('\n')).button('Entendi!').show(p).catch(() => { /* */ });
-}
-
-function trainingTarget(p) {
-  const c = currentClue(); if (!c) return;
-  const dim = p.dimension;
-  const pos = { x: Math.floor(p.location.x) + 2, y: Math.floor(p.location.y), z: Math.floor(p.location.z) + 2 };
-  if (inLobby(pos) || inArena(pos)) { tell(p, '§cO treino não funciona no lobby/arena. Desça para o mundo.'); return; }
-  const t = c.targets[0];
-  if (c.kind === 'block') {
-    cmd(dim, `setblock ${pos.x} ${pos.y} ${pos.z} ${t}`);
-  } else {
-    try { dim.spawnEntity(t, { x: pos.x + 0.5, y: pos.y + 0.2, z: pos.z + 0.5 }); } catch { tell(p, '§cNão consegui criar o mob aqui.'); return; }
-  }
-  say(`§8[Treino] §7${p.name} criou o alvo da pista atual.`);
 }
 
 // ------------------------------------------------------------------ EVENTOS
@@ -1046,57 +999,40 @@ system.beforeEvents.startup.subscribe((ev) => {
   });
 });
 
-world.afterEvents.itemUse.subscribe((e) => {
-  if (e.itemStack?.typeId?.startsWith(NS)) onUseItem(e.source, e.itemStack);
-});
+world.afterEvents.itemUse.subscribe((e) => { if (e.itemStack?.typeId?.startsWith(NS)) onUseItem(e.source, e.itemStack); });
 world.afterEvents.itemStartUse.subscribe((e) => {
-  const g = GUNS[e.itemStack?.typeId];
-  if (!g) return;
+  const g = GUNS[e.itemStack?.typeId]; if (!g) return;
   if (g.auto && !e.source.isSneaking) firing.add(e.source.id);
   triggerGun(e.source, e.itemStack.typeId, false);
 });
 world.afterEvents.itemStopUse.subscribe((e) => { firing.delete(e.source.id); });
 world.afterEvents.itemCompleteUse.subscribe((e) => onEat(e.source, e.itemStack));
-
 world.afterEvents.entityHitEntity.subscribe((e) => { try { onMelee(e.damagingEntity, e.hitEntity); } catch { /* */ } });
 
 world.afterEvents.playerBreakBlock.subscribe((e) => {
   const id = e.brokenBlockPermutation.type.id;
   const loc = { x: e.block.location.x + 0.5, y: e.block.location.y + 0.5, z: e.block.location.z + 0.5 };
-  // Bloco de Melancia Secreto: precisa de picareta de ferro ou melhor
   if (id === NS + 'secret_melon') {
     const tool = e.itemStackBeforeBreak?.typeId ?? '';
-    if (/(iron|diamond|netherite)_pickaxe$/.test(tool)) {
-      if (!inLobby(loc)) dropRewards(e.player, loc, { featured: [rollPool()] });
-      else if (ready(e.player, 'lobbymelon', 20 * 60 * 5)) dropRewards(e.player, loc, { featured: [], extra: 1 });
-      else tell(e.player, '§7A Melancia Secreta do lobby recarrega a cada 5 minutos por jogador.');
-      if (inLobby(loc)) system.runTimeout(() => cmd(e.dimension, `setblock ${e.block.location.x} ${e.block.location.y} ${e.block.location.z} secretop:secret_melon`), 100);
-    } else {
-      tell(e.player, '§cA Melancia Secreta precisa de uma picareta de ferro (ou melhor)!');
-      if (inLobby(loc)) system.runTimeout(() => cmd(e.dimension, `setblock ${e.block.location.x} ${e.block.location.y} ${e.block.location.z} secretop:secret_melon`), 20);
-    }
+    if (/(iron|diamond|netherite)_pickaxe$/.test(tool)) dropRewards(e.player, loc, { featured: [rollPool()] });
+    else tell(e.player, '§cA Melancia Secreta precisa de uma picareta de ferro (ou melhor)!');
   }
   if (e.itemStackBeforeBreak?.typeId === NS + 'syntaxium_axe' && /(_log|_stem)$/.test(id)) fellTree(e.player, e.block, id);
   const c = currentClue();
-  if (S.phase === 'clue' && c && c.kind === 'block' && c.targets.includes(id)) {
-    if (inLobby(loc) || inArena(loc)) { tell(e.player, '§7Blocos do lobby/arena não contam. Ache um no mundo!'); return; }
-    solve(e.player, loc);
-  }
+  if (clueActive() && c.kind === 'block' && c.targets.includes(id)) solve(e.player, loc);
 });
 
 world.afterEvents.playerInteractWithBlock.subscribe((e) => {
   if (!e.isFirstEvent) return;
   const c = currentClue();
-  if (S.phase === 'clue' && c?.use && c.kind === 'block' && c.targets.includes(e.block.typeId)) {
-    const loc = { x: e.block.location.x + 0.5, y: e.block.location.y + 1, z: e.block.location.z + 0.5 };
-    if (inLobby(loc) || inArena(loc)) { tell(e.player, '§7O atril do lobby é só demonstração. Ache um no mundo!'); return; }
-    solve(e.player, loc);
+  if (clueActive() && c.use && c.kind === 'block' && c.targets.includes(e.block.typeId)) {
+    solve(e.player, { x: e.block.location.x + 0.5, y: e.block.location.y + 1, z: e.block.location.z + 0.5 });
   }
 });
 
 world.afterEvents.playerInteractWithEntity.subscribe((e) => {
   const c = currentClue();
-  if (S.phase === 'clue' && c?.use && c.kind === 'mob' && c.targets.includes(e.target.typeId)) {
+  if (clueActive() && c.use && c.kind === 'mob' && c.targets.includes(e.target.typeId)) {
     let loc; try { loc = { ...e.target.location }; } catch { loc = e.player.location; }
     solve(e.player, loc);
   }
@@ -1106,7 +1042,7 @@ world.afterEvents.entityDie.subscribe((e) => {
   const dead = e.deadEntity;
   let typeId; try { typeId = dead.typeId; } catch { return; }
   if (typeId === 'minecraft:player') {
-    if (S.phase === 'deathmatch' && S.alive.includes(dead.id)) {
+    if (S.phase === 'fight' && S.alive.includes(dead.id)) {
       S.alive = S.alive.filter((x) => x !== dead.id); save();
       say(`§c☠ ${Reflect.get(dead, 'name') ?? 'Jogador'} foi eliminado! §7(${S.alive.length} restante(s))`);
     }
@@ -1114,7 +1050,7 @@ world.afterEvents.entityDie.subscribe((e) => {
   }
   const killer = e.damageSource?.damagingEntity;
   const c = currentClue();
-  if (S.phase === 'clue' && c?.kind === 'mob' && c.targets.includes(typeId) && killer?.typeId === 'minecraft:player') {
+  if (clueActive() && c.kind === 'mob' && c.targets.includes(typeId) && killer?.typeId === 'minecraft:player') {
     let loc; try { loc = { ...dead.location }; } catch { loc = killer.location; }
     solve(killer, loc);
   }
@@ -1124,57 +1060,44 @@ world.afterEvents.playerSpawn.subscribe((e) => {
   const p = e.player;
   system.runTimeout(() => {
     if (!S) return;
+    showBoard();
+    if (S.phase === 'setup') { setupVillage(p); return; }
     if (e.initialSpawn) {
-      ensureWorld(p);
-      showBoard();
-      if (!p.getDynamicProperty(NS + 'welcomed')) {
-        p.setDynamicProperty(NS + 'welcomed', true);
-        give(p, new ItemStack(NS + 'clue_remote', 1));
-        give(p, new ItemStack(NS + 'clue_book', 1));
-        system.runTimeout(() => goLobby(p), 20);
-        title(p, '§l§dSECRET OP', '§fSegure o §dControle §fe toque em USAR', 80);
-      }
-      tell(p, '§d[SECRET OP] §fBem-vindo! Use o §dControle do Desafio §f(USAR) para abrir o menu.');
+      if (!p.getDynamicProperty(NS + 'joined')) { p.setDynamicProperty(NS + 'joined', true); toVillage(p); }
+      if (S.phase === 'prep') tell(p, `§d[SECRET OP] §fDesafio em andamento: faltam §e${mmss(S.prepLeft)}§f para a luta final.`);
     }
-    if (S.phase === 'idle' && p.getGameMode() === GameMode.Spectator) { try { p.setGameMode(GameMode.Survival); goLobby(p); } catch { /* */ } }
-    if (S.phase === 'deathmatch' && !S.alive.includes(p.id)) {
-      try { p.setGameMode(GameMode.Spectator); const C = arenaCenter(); if (C) p.teleport({ x: C.x, y: C.y + 12, z: C.z }); } catch { /* */ }
+    if (S.phase === 'fight' && !S.alive.includes(p.id)) {
+      try { p.setGameMode(GameMode.Spectator); } catch { /* */ }
+      tell(p, '§7Você está assistindo. Voe até os sobreviventes!');
     }
   }, 30);
+});
+
+system.afterEvents.scriptEventReceive.subscribe((e) => {
+  if (e.id === 'secretop:reiniciar') {
+    if (S.phase === 'prep' || S.phase === 'intro' || S.phase === 'fight') {
+      say('§7[SECRET OP] Reiniciando a rodada a pedido de um administrador.');
+    }
+    if (S.village) restartRound();
+  }
 });
 
 // ------------------------------------------------------------------ LAÇOS
 function secondTick() {
   if (players().length === 0) return;
-  if (S.phase === 'intermission' || S.phase === 'clue' || S.phase === 'countdown' || S.phase === 'deathmatch' || S.phase === 'finished') {
-    S.timeLeft--;
-    if (S.phase === 'intermission' && S.timeLeft <= 0) beginClue();
-    else if (S.phase === 'clue' && S.timeLeft <= 0) expireClue();
-    else if (S.phase === 'clue' && S.timeLeft === Math.floor(S.total / 2)) say(`§8[Dica] §7${currentClue()?.hint ?? ''}`);
-    else if (S.phase === 'countdown' && S.timeLeft <= 0) startDeathmatch();
-    else if (S.phase === 'countdown' && S.timeLeft <= 5) for (const p of players()) sfx(p, 'note.hat', 1.5);
-    else if (S.phase === 'deathmatch') deathmatchSecond();
-    else if (S.phase === 'finished' && S.timeLeft <= 0) resetToLobby();
-    if (S.timeLeft % 5 === 0) save();
-  }
+  if (S.phase === 'intro') { S.introLeft--; introSecond(); }
+  else if (S.phase === 'prep') prepSecond();
+  else if (S.phase === 'fight') fightSecond();
+  if (S.phase === 'prep' && S.prepLeft % 5 === 0) save();
   armorSecond();
-}
-
-function lobbyPortal() {
-  if (!S.lobby) return;
-  for (const p of players()) {
-    const l = p.location;
-    if (Math.abs(l.x - (S.lobby.x + 0.5)) <= 1.6 && l.z >= S.lobby.z - 9 && l.z <= S.lobby.z - 6 && Math.abs(l.y - LOBBY_Y) < 1.5) {
-      if (ready(p, 'portal', 40)) { title(p, ' ', '§aBoa caçada!', 20); dropToWorld(p); }
-    }
-  }
 }
 
 world.afterEvents.worldLoad.subscribe(() => {
   load();
-  if (S.phase === 'deathmatch' || S.phase === 'countdown' || S.phase === 'finished') { S.phase = 'idle'; save(); }
+  S.settingUp = false;
+  if (S.phase === 'setup' && S.village) beginIntro();
   system.runInterval(gunLoop, 1);
   system.runInterval(allayTick, 2);
-  system.runInterval(() => { hud(); borderParticles(); lobbyPortal(); }, 10);
+  system.runInterval(hud, 10);
   system.runInterval(secondTick, 20);
 });

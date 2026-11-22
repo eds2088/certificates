@@ -1,4 +1,4 @@
-"""Gera o SECRET OP v2: behavior pack, resource pack, .mcaddon e .mcworld.
+"""Gera o SECRET OP v3: behavior pack, resource pack, .mcaddon e .mcworld.
 
 Uso:  python3 gerar.py            (gera tudo em ../dist)
 Requisitos: Python 3.10+, Pillow, numpy e ffmpeg (com libvorbis) para os sons.
@@ -10,15 +10,16 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
-from itens import sprites
-from armas import horizontal
+from itens import sprites, axe_hd
+from armas_hd import guns_hd
+from hd import hd, hd_flat
 import modelos as M
 
 ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / 'build'
 DIST = ROOT / 'dist'
 SRC = ROOT / 'src'
-VERSION = [2, 0, 0]
+VERSION = [3, 0, 0]
 ENGINE = [1, 21, 90]
 FMT = '1.21.90'
 BP_UUID, BP_DATA, BP_SCRIPT = '3119ba24-6408-4356-a35d-0a962767acf9', '8247bbc9-2019-435b-992b-049bcd52001a', '05661b7a-a47a-495e-88e9-72bdc97a56ad'
@@ -28,29 +29,27 @@ NS = 'secretop'
 # ---------------------------------------------------------------- definição dos itens
 # (id, nome exibido, tipo, extras)
 ITEMS = [
-    ('syntaxium_sword', '§dSyntaxium Sword', 'sword', dict(damage=30, glint=True)),
-    ('heavy_syntaxium_sword', '§cHeavy Syntaxium Sword', 'sword', dict(damage=36)),
-    ('syntaxium_axe', '§5Syntaxium Axe', 'axe', dict(damage=18, glint=True)),
-    ('netherite_katana', '§8Netherite Katana', 'sword', dict(damage=18, use=True)),
-    ('yami_katana', "§5Yami's Katana", 'sword', dict(damage=18)),
-    ('laser_blade', '§bLaser Blade', 'sword', dict(damage=20)),
-    ('hk_g3_rifle', '§fHK G3 Battle Rifle', 'gun', {}),
-    ('combat_pistol', '§fTactical Pistol', 'gun', {}),
-    ('scatter_shotgun', '§fSecret Shotgun', 'gun', {}),
-    ('m700_sniper', '§fM700 Sniper Rifle', 'gun', {}),
-    ('ammo_box', '§6Ammo Box', 'stack', dict(stack=64, use=True)),
+    ('syntaxium_sword', '§dEspada Syntaxium', 'sword', dict(damage=30, glint=True)),
+    ('heavy_syntaxium_sword', '§cEspada Syntaxium Pesada', 'sword', dict(damage=36)),
+    ('syntaxium_axe', '§5Machado Syntaxium', 'axe', dict(damage=18, glint=True)),
+    ('netherite_katana', '§8Katana de Netherita', 'sword', dict(damage=18, use=True)),
+    ('yami_katana', '§5Katana do Yami', 'sword', dict(damage=18)),
+    ('laser_blade', '§bLâmina Laser', 'sword', dict(damage=20)),
+    ('hk_g3_rifle', '§fFuzil HK G3', 'gun', {}),
+    ('combat_pistol', '§fPistola Tática', 'gun', {}),
+    ('scatter_shotgun', '§fEscopeta Secreta', 'gun', {}),
+    ('m700_sniper', '§fFuzil de Precisão M700', 'gun', {}),
+    ('ammo_box', '§6Caixa de Munição', 'stack', dict(stack=64, use=True)),
     ('totem_boost', '§cTotem Boost V', 'stack', dict(stack=16, use=True, offhand=True)),
-    ('tnt_cowl', '§cTNT Cowl', 'armor', dict(slot='head', protection=3)),
-    ('syntaxium_helmet', '§dSyntaxium Helmet', 'armor', dict(slot='head', protection=3, glint=True)),
-    ('syntaxium_chestplate', '§dSyntaxium Chestplate', 'armor', dict(slot='chest', protection=8, glint=True)),
-    ('netherite_leggings', '§5Netherite Leggings', 'armor', dict(slot='legs', protection=6)),
-    ('syntaxium_boots', '§dSyntaxium Boots', 'armor', dict(slot='feet', protection=3, glint=True)),
-    ('creeper_shirt', '§aCreeper Shirt', 'armor', dict(slot='chest', protection=1)),
-    ('compacted_golden_apple', '§6Compacted Golden Apple', 'food', dict(glint=True)),
-    ('titanium_apple', '§7Titanium Apple', 'food', {}),
-    ('allay_whistle', '§bAllay Amulet', 'stack', dict(stack=1, use=True)),
-    ('clue_remote', '§dSecret Clue Controller', 'stack', dict(stack=1, use=True)),
-    ('clue_book', '§5Clue Diary', 'stack', dict(stack=1, use=True)),
+    ('tnt_cowl', '§cCapuz de TNT', 'armor', dict(slot='head', protection=3)),
+    ('syntaxium_helmet', '§dCapacete Syntaxium', 'armor', dict(slot='head', protection=3, glint=True)),
+    ('syntaxium_chestplate', '§dPeitoral Syntaxium', 'armor', dict(slot='chest', protection=8, glint=True)),
+    ('netherite_leggings', '§5Calças de Netherita', 'armor', dict(slot='legs', protection=6)),
+    ('syntaxium_boots', '§dBotas Syntaxium', 'armor', dict(slot='feet', protection=3, glint=True)),
+    ('creeper_shirt', '§aCamisa Creeper', 'armor', dict(slot='chest', protection=1)),
+    ('compacted_golden_apple', '§6Maçã Dourada Compactada', 'food', dict(glint=True)),
+    ('titanium_apple', '§7Maçã de Titânio', 'food', {}),
+    ('allay_whistle', '§bAmuleto do Allay', 'stack', dict(stack=1, use=True)),
 ]
 PT_NAMES = {'ammo_box': '§6Caixa de Munição', 'allay_whistle': '§bAmuleto do Allay', 'clue_remote': '§dControle do Desafio',
             'clue_book': '§5Diário de Pistas', 'compacted_golden_apple': '§6Maçã Dourada Compactada', 'titanium_apple': '§7Maçã de Titânio',
@@ -118,20 +117,20 @@ def item_json(iid, kind, ex):
 def manifest(kind):
     if kind == 'bp':
         return {'format_version': 2, 'header': {
-            'name': 'SECRET OP v2 - Drops & Pistas | BP', 'description': '22 pistas, drops OP, armas, Allay ajudante e Deathmatch (v2.0)',
+            'name': 'SECRET OP v3 - Drops & Pistas | BP', 'description': 'Começa na vila, 25 min de preparo, 22 pistas, drops OP e luta final sem área (v3)',
             'uuid': BP_UUID, 'version': VERSION, 'min_engine_version': ENGINE},
             'modules': [{'type': 'data', 'uuid': BP_DATA, 'version': VERSION},
                         {'type': 'script', 'language': 'javascript', 'entry': 'scripts/main.js', 'uuid': BP_SCRIPT, 'version': VERSION}],
             'dependencies': [{'uuid': RP_UUID, 'version': VERSION},
                              {'module_name': '@minecraft/server', 'version': '2.0.0'},
-                             {'module_name': '@minecraft/server-ui', 'version': '2.0.0'}],
-            'metadata': {'authors': ['SECRET OP v2'], 'product_type': 'addon'}}
+                             ],
+            'metadata': {'authors': ['SECRET OP v3'], 'product_type': 'addon'}}
     return {'format_version': 2, 'header': {
-        'name': 'SECRET OP v2 - Drops & Pistas | RP', 'description': 'Texturas, sons e partículas originais do SECRET OP (v2.0)',
+        'name': 'SECRET OP v3 - Drops & Pistas | RP', 'description': 'Texturas, sons e partículas originais do SECRET OP (v3)',
         'uuid': RP_UUID, 'version': VERSION, 'min_engine_version': ENGINE},
         'modules': [{'type': 'resources', 'uuid': RP_RES, 'version': VERSION}],
         'dependencies': [{'uuid': BP_UUID, 'version': VERSION}],
-        'metadata': {'authors': ['SECRET OP v2'], 'product_type': 'addon'}}
+        'metadata': {'authors': ['SECRET OP v3'], 'product_type': 'addon'}}
 
 
 def particle(pid, color, count=10, life=0.6, speed=2.0, size=0.08, radius=0.3, gravity=-2.0, shape='sphere', instant=True, drag=2.0):
@@ -292,45 +291,40 @@ def level_dat(name, seed):
 def build():
     if BUILD.exists():
         shutil.rmtree(BUILD)
-    bp, rp = BUILD / 'SecretOP_v2_BP', BUILD / 'SecretOP_v2_RP'
+    bp, rp = BUILD / 'SecretOP_v3_BP', BUILD / 'SecretOP_v3_RP'
     spr = sprites()
-    guns_h = horizontal()
+    guns_h = guns_hd()
 
     # ---- texturas de itens
     item_tex = {}
     for iid, _, _, _ in ITEMS:
-        if iid in guns_h:
-            src = guns_h[iid]
-            im = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
-            im.paste(src, ((32 - src.size[0]) // 2, (32 - src.size[1]) // 2))
-        else:
-            im = spr[iid]
+        im = guns_h[iid] if iid in guns_h else (axe_hd() if iid == 'syntaxium_axe' else hd(spr[iid]))
         p = rp / 'textures' / NS / 'items' / f'{iid}.png'
         p.parent.mkdir(parents=True, exist_ok=True)
         im.save(p)
         item_tex[f'{NS}_{iid}'] = {'textures': f'textures/{NS}/items/{iid}'}
-    wjson(rp / 'textures' / 'item_texture.json', {'resource_pack_name': 'secretop_v2', 'texture_name': 'atlas.items', 'texture_data': item_tex})
+    wjson(rp / 'textures' / 'item_texture.json', {'resource_pack_name': 'secretop_v3', 'texture_name': 'atlas.items', 'texture_data': item_tex})
 
     # ---- armaduras
-    arm = {'syntaxium': M.armor_syntaxium(), 'netherite_legs': M.armor_netherite_legs(),
-           'tnt_cowl': M.armor_tnt_cowl(), 'creeper_shirt': M.armor_creeper_shirt()}
+    arm = {'syntaxium': hd_flat(M.armor_syntaxium()), 'netherite_legs': hd_flat(M.armor_netherite_legs()),
+           'tnt_cowl': hd_flat(M.armor_tnt_cowl()), 'creeper_shirt': hd_flat(M.armor_creeper_shirt())}
     for k, im in arm.items():
         p = rp / 'textures' / NS / 'models' / 'armor' / f'{k}.png'
         p.parent.mkdir(parents=True, exist_ok=True); im.save(p)
 
     # ---- bloco
     (rp / 'textures' / NS / 'blocks').mkdir(parents=True, exist_ok=True)
-    M.melon_side().save(rp / 'textures' / NS / 'blocks' / 'secret_melon_side.png')
-    M.melon_top().save(rp / 'textures' / NS / 'blocks' / 'secret_melon_top.png')
+    M.melon_side_hd().save(rp / 'textures' / NS / 'blocks' / 'secret_melon_side.png')
+    M.melon_top_hd().save(rp / 'textures' / NS / 'blocks' / 'secret_melon_top.png')
     wjson(rp / 'textures' / 'terrain_texture.json', {
-        'resource_pack_name': 'secretop_v2', 'texture_name': 'atlas.terrain', 'padding': 8, 'num_mip_levels': 4,
+        'resource_pack_name': 'secretop_v3', 'texture_name': 'atlas.terrain', 'padding': 8, 'num_mip_levels': 4,
         'texture_data': {f'{NS}_melon_side': {'textures': f'textures/{NS}/blocks/secret_melon_side'},
                          f'{NS}_melon_top': {'textures': f'textures/{NS}/blocks/secret_melon_top'}}})
     wjson(rp / 'blocks.json', {'format_version': [1, 1, 0], f'{NS}:secret_melon': {'sound': 'wood'}})
 
     # ---- Allay modificado
     (rp / 'textures' / NS / 'entity').mkdir(parents=True, exist_ok=True)
-    M.allay_texture().save(rp / 'textures' / NS / 'entity' / 'op_allay.png')
+    hd_flat(M.allay_texture(), noise=0.03).save(rp / 'textures' / NS / 'entity' / 'op_allay.png')
     wjson(rp / 'models' / 'entity' / 'op_allay.geo.json', M.allay_geometry())
     wjson(rp / 'animations' / 'op_allay.animation.json', {'format_version': '1.8.0', 'animations': {
         'animation.secretop.op_allay.float': {'loop': True, 'bones': {'root': {'position': [0, 'math.sin(q.life_time * 180) * 1.2', 0]}}},
@@ -414,13 +408,13 @@ def build():
     en, pt = [], []
     for iid, name, _, _ in ITEMS:
         en.append(f'item.{NS}:{iid}.name={name}')
-        pt.append(f'item.{NS}:{iid}.name={PT_NAMES.get(iid, name)}')
-    for lst, mel, egg, allay in ((en, '§2Secret Melon Block', 'Spawn Modified Allay', 'Modified Allay'),
+        pt.append(f'item.{NS}:{iid}.name={name}')
+    for lst, mel, egg, allay in ((en, '§2Bloco de Melancia Secreto', 'Gerar Allay Modificado', 'Allay Modificado'),
                                  (pt, '§2Bloco de Melancia Secreto', 'Gerar Allay Modificado', 'Allay Modificado')):
         lst.append(f'tile.{NS}:secret_melon.name={mel}')
         lst.append(f'entity.{NS}:op_allay.name={allay}')
         lst.append(f'item.spawn_egg.entity.{NS}:op_allay.name={egg}')
-        lst.append('pack.name=SECRET OP v2')
+        lst.append('pack.name=SECRET OP v3')
         lst.append('pack.description=Drops secretos, 22 pistas e Deathmatch')
     (rp / 'texts').mkdir(parents=True, exist_ok=True)
     (rp / 'texts' / 'en_US.lang').write_text('\n'.join(en) + '\n', encoding='utf-8')
@@ -431,8 +425,8 @@ def build():
     # ---- manifestos e ícones
     wjson(bp / 'manifest.json', manifest('bp'))
     wjson(rp / 'manifest.json', manifest('rp'))
-    M.pack_icon(spr, 'Behavior Pack v2').save(bp / 'pack_icon.png')
-    M.pack_icon(spr, 'Resource Pack v2').save(rp / 'pack_icon.png')
+    M.pack_icon(spr, 'Behavior Pack v3').save(bp / 'pack_icon.png')
+    M.pack_icon(spr, 'Resource Pack v3').save(rp / 'pack_icon.png')
     return bp, rp, spr
 
 
@@ -444,22 +438,22 @@ def zipdir(zf: zipfile.ZipFile, folder: Path, arc_prefix: str):
 
 def package(bp, rp, spr):
     DIST.mkdir(exist_ok=True)
-    addon = DIST / 'SecretOP_v2_Drops_e_Pistas.mcaddon'
+    addon = DIST / 'SecretOP_v3_Drops_e_Pistas.mcaddon'
     with zipfile.ZipFile(addon, 'w', zipfile.ZIP_DEFLATED) as z:
         zipdir(z, bp, bp.name); zipdir(z, rp, rp.name)
     world_dir = BUILD / 'world'
     if world_dir.exists():
         shutil.rmtree(world_dir)
     world_dir.mkdir(parents=True)
-    (world_dir / 'level.dat').write_bytes(level_dat('SECRET OP v2 - Drops & Pistas', 20261122))
-    (world_dir / 'levelname.txt').write_text('SECRET OP v2 - Drops & Pistas', encoding='utf-8')
+    (world_dir / 'level.dat').write_bytes(level_dat('SECRET OP v3 - Vila', 20261122))
+    (world_dir / 'levelname.txt').write_text('SECRET OP v3 - Vila', encoding='utf-8')
     wjson(world_dir / 'world_behavior_packs.json', [{'pack_id': BP_UUID, 'version': VERSION}])
     wjson(world_dir / 'world_resource_packs.json', [{'pack_id': RP_UUID, 'version': VERSION}])
-    icon = M.pack_icon(spr, 'Mundo pronto').convert('RGB').resize((256, 256))
+    icon = M.pack_icon(spr, 'Começa na vila').convert('RGB').resize((256, 256))
     icon.save(world_dir / 'world_icon.jpeg', quality=92)
     shutil.copytree(bp, world_dir / 'behavior_packs' / bp.name)
     shutil.copytree(rp, world_dir / 'resource_packs' / rp.name)
-    mcworld = DIST / 'SecretOP_v2_Mundo.mcworld'
+    mcworld = DIST / 'SecretOP_v3_Mundo.mcworld'
     with zipfile.ZipFile(mcworld, 'w', zipfile.ZIP_DEFLATED) as z:
         zipdir_flat(z, world_dir)
     return addon, mcworld

@@ -11,6 +11,7 @@ export const system = {
   run(f) { return this.runTimeout(f, 1); },
   clearRun(id) { const i = timers.findIndex((t) => t.id === id); if (i >= 0) timers.splice(i, 1); },
   beforeEvents: { startup: mkEvt('startup') },
+  afterEvents: { scriptEventReceive: mkEvt('scriptEventReceive') },
 };
 export function advance(n) {
   for (let k = 0; k < n; k++) {
@@ -29,6 +30,7 @@ export class ItemStack {
 export const EquipmentSlot = { Head: 'Head', Chest: 'Chest', Legs: 'Legs', Feet: 'Feet', Mainhand: 'Mainhand', Offhand: 'Offhand' };
 export const GameMode = { Survival: 'Survival', Spectator: 'Spectator', Creative: 'Creative', Adventure: 'Adventure' };
 export const EntityDamageCause = { magic: 'magic', projectile: 'projectile', entityAttack: 'entityAttack' };
+export class BlockVolume { constructor(a, b) { this.from = a; this.to = b; } }
 export const EnchantmentTypes = { get: (id) => ({ id }) };
 export const DisplaySlotId = { Sidebar: 'Sidebar' };
 export const ObjectiveSortOrder = { Descending: 1 };
@@ -58,7 +60,9 @@ class Entity {
 const dim = {
   id: 'minecraft:overworld',
   runCommand(c) { commands.push(c); return { successCount: 1 }; },
-  getBlock(l) { return { location: l, typeId: 'minecraft:air', getComponent: (id) => id === 'minecraft:inventory' ? { container: new Container() } : id === 'minecraft:sign' ? { setText() {} } : undefined }; },
+  getTopmostBlock(l) { return { location: { x: l.x, y: 64, z: l.z } }; },
+  containsBlock() { return false; },
+  getBlock(l) { return { location: l, typeId: l.y <= 64 ? 'minecraft:grass_block' : 'minecraft:air', getComponent: (id) => id === 'minecraft:inventory' ? { container: new Container() } : id === 'minecraft:sign' ? { setText() {} } : undefined }; },
   spawnItem(it, l) { log.push('DROP ' + it.typeId); return new Entity('minecraft:item', l, dim); },
   spawnEntity(t, l) { return new Entity(t, l, dim); },
   getEntities(q = {}) { return entities.filter((e) => e.isValid && (!q.type || e.typeId === q.type) && (!q.tags || q.tags.every((t) => e.tags.has(t)))); },

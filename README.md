@@ -29,7 +29,7 @@ Login → enviar a planilha de notas → escolher STARTERS, MOVERS ou FLYERS →
 
 ## 1. Calculadora de Escudos (página inicial)
 
-### Planilha de notas (.xlsx)
+### Planilha de notas (.xlsx, .xlsm ou .xls)
 
 4 colunas: Nome, Reading/Writing, Listening e Speaking. O cabeçalho é a primeira linha preenchida.
 
@@ -131,5 +131,5 @@ Como o site não tem servidor, a troca vale só naquele navegador, até a págin
 
 ## Limites
 
-- Só planilhas `.xlsx` são aceitas.
+- São aceitas planilhas Excel `.xlsx`, `.xlsm` (com macros) e `.xls` (Excel 97-2003, inclusive tabelas exportadas por outros sistemas com essa extensão). Sempre é lida a primeira aba. Planilhas protegidas por senha não abrem: tire a senha no Excel antes de enviar.
 - Fechar ou recarregar a página apaga os dados carregados, as imagens trocadas e trava de novo as áreas desbloqueadas.

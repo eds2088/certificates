@@ -29,6 +29,9 @@ import {
   RawScoreData,
   ValidationError,
   BlankScoreRow,
+  isSpreadsheetFileName,
+  SPREADSHEET_ACCEPT,
+  SPREADSHEET_FORMATS_TEXT,
 } from "@/lib/shieldConverter";
 import { EXAMS, EXAM_TYPES, MAX_SHIELDS, shieldRanges } from "@/lib/exams";
 import { CertificateData } from "@/lib/certificateGenerator";
@@ -52,10 +55,10 @@ export default function ShieldCalculator() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!/\.xlsx$/i.test(file.name)) {
+    if (!isSpreadsheetFileName(file.name)) {
       toast({
         title: "Tipo de arquivo inválido",
-        description: "Por favor, envie um arquivo Excel (.xlsx)",
+        description: `Envie uma planilha Excel (${SPREADSHEET_FORMATS_TEXT})`,
         variant: "destructive",
       });
       return;
@@ -210,7 +213,7 @@ export default function ShieldCalculator() {
             <div className="text-center">
               <h2 className="text-2xl font-semibold mb-2">Enviar Planilha de Notas</h2>
               <div className="text-sm text-muted-foreground mb-6 space-y-1">
-                <p>Arquivo .xlsx com 4 colunas: Nome, Reading/Writing, Listening, Speaking</p>
+                <p>Planilha Excel ({SPREADSHEET_FORMATS_TEXT}) com 4 colunas: Nome, Reading/Writing, Listening, Speaking</p>
                 {EXAM_TYPES.map((type) => (
                   <p key={type} className="font-medium">
                     {type} (Reading/Writing: 0-{EXAMS[type].readingWriting}, Listening: 0-{EXAMS[type].listening}, Speaking: 0-{MAX_SHIELDS} escudos)
@@ -223,7 +226,7 @@ export default function ShieldCalculator() {
             <label className="cursor-pointer flex flex-col items-center justify-center p-8 border-2 border-dashed border-border rounded-lg hover:border-primary transition-colors">
               <input
                 type="file"
-                accept=".xlsx"
+                accept={SPREADSHEET_ACCEPT}
                 onChange={handleFileChange}
                 className="hidden"
                 disabled={isProcessing}

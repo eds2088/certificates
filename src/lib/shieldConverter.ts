@@ -104,21 +104,43 @@ export const convertScoresToShields = (
   return { shields, errors };
 };
 
+/** Formatos aceitos: Excel (.xlsx), Excel com macros (.xlsm) e Excel 97-2003 (.xls). */
+export const SPREADSHEET_ACCEPT = ".xlsx,.xlsm,.xls";
+export const SPREADSHEET_FORMATS_TEXT = ".xlsx, .xlsm ou .xls";
+export const isSpreadsheetFileName = (name: string) => /\.(xlsx|xlsm|xls)$/i.test(name);
+
 /**
  * Lê a primeira aba. `firstRow` é o número (1, 2, …) da linha da planilha que virou rows[0]:
  * o xlsx começa a leitura na primeira linha usada, que nem sempre é a linha 1.
  */
 export const readWorkbookRows = async (file: File): Promise<{ rows: unknown[][]; firstRow: number }> => {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  // Todo .xlsx de verdade é um ZIP e começa com "PK". Se não começar, costuma ser uma
-  // página da web salva com o nome .xlsx (ex.: "Salvar link como" no GitHub).
-  if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
-    throw new Error(
-      "este arquivo não é uma planilha Excel (.xlsx) de verdade. Talvez seja uma página da web salva com esse nome. " +
-        "Abra o arquivo no Excel e salve de novo como .xlsx, ou baixe o arquivo original outra vez.",
-    );
+  const notASpreadsheet = new Error(
+    "este arquivo não é uma planilha Excel de verdade. Talvez seja uma página da web salva com esse nome. " +
+      "Abra o arquivo no Excel e salve de novo (.xlsx, .xlsm ou .xls), ou baixe o arquivo original outra vez.",
+  );
+
+  // .xlsx e .xlsm são ZIP e começam com "PK"; o .xls do Excel começa com D0 CF 11 E0.
+  // Um .xls também pode ser uma tabela exportada por outro sistema (HTML/XML): o leitor
+  // tenta abrir. Um .xlsx/.xlsm que não começa com "PK" costuma ser uma página da web
+  // salva com esse nome (ex.: "Salvar link como" no GitHub).
+  const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+  const isOle = bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0;
+  const isXls = /\.xls$/i.test(file.name);
+  if (!isZip && !isOle && !isXls) throw notASpreadsheet;
+
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(bytes, { type: "array" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (/password|encrypt/i.test(message)) {
+      throw new Error(
+        "a planilha está protegida por senha. Abra no Excel, tire a senha e salve de novo antes de enviar.",
+      );
+    }
+    throw notASpreadsheet;
   }
-  const workbook = XLSX.read(bytes, { type: "array" });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
   const ref = firstSheet?.["!ref"];
   const firstRow = ref ? XLSX.utils.decode_range(ref).s.r + 1 : 1;

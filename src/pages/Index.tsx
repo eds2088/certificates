@@ -172,7 +172,10 @@ const Index = () => {
     } catch (error) {
       toast({
         title: "Erro ao ler arquivo",
-        description: "Certifique-se de que o arquivo é um Excel válido",
+        description:
+          error instanceof Error && error.message
+            ? `Não foi possível abrir: ${error.message}`
+            : "Certifique-se de que o arquivo é uma planilha Excel válida",
         variant: "destructive",
       });
     }
